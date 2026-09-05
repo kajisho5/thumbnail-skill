@@ -235,6 +235,8 @@ upload, a plugin loader, arbitrary shell/ffmpeg/JavaScript/HTML/CSS execution.
 - [docs/model.md](docs/model.md): the full ThumbnailDocument / Canvas / Element / Asset schema
 - [docs/security.md](docs/security.md): execution boundary, path policy, validation
 - [docs/testing.md](docs/testing.md): unit, security, integration/real-media tests; fixtures
+- [docs/ffmpeg-skill.md](docs/ffmpeg-skill.md): the ffmpeg-skill contract this skill relies on, tools/flags used, observed behaviour, known gaps
+- [docs/decisions.md](docs/decisions.md): why things are built the way they are (ADR log)
 
 ## Support
 
