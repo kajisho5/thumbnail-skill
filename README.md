@@ -210,6 +210,14 @@ rendering engine and its version, the render/extraction identity hash, `reused`,
 resolved path + sha256 (+ timestamp and source duration for `video_frame`), every font actually
 used (`font_id`, path, sha256), and the output's own sha256.
 
+## Cross-repository Capability ids
+
+`skill --json` (alias `contract --json`) also publishes `provides`: `render` as Capability
+id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame` — the identifiers a
+registry (see `kajisho5/AI-video-production-OS`) can resolve to this Skill without
+hardcoding it. `validate` has no Capability id — it produces no output artifact, only a
+structural check. Additive; no behavior change to any tool.
+
 ## Where this skill ends and others begin
 
 | Repository | Question it answers | Example |

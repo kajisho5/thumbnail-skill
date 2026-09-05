@@ -36,6 +36,24 @@ TOOLS: List[Dict[str, Any]] = [
      "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes the output file", "writes a reuse cache entry under the workspace"]},
 ]
 
+# Cross-repository Capability ids (kajisho5/AI-video-production-OS docs/SPEC.md
+# `CapabilityContract.provides`), matching the ids proposed for this Skill in that project's
+# own docs/CAPABILITY_MATRIX.md (as of this writing, on its unmerged `claude/ai-video-
+# production-os-arch-fck6fy` branch, not yet on that repo's main -- hence lifecycle
+# EXPERIMENTAL here too, not a claim of a finalized cross-repo contract). Only tools with
+# produces_output True get one:
+# a Capability id names something that produces an Artifact, and `thumbnail/validate`
+# (produces_output False, a structural pre-flight check) does not.
+CAPABILITY_IDS: Dict[str, str] = {
+    "thumbnail/render": "thumbnail.render",
+    "thumbnail/extract_frame": "thumbnail.extract_frame",
+}
+
+
+def capability_provides() -> List[Dict[str, str]]:
+    return [{"id": CAPABILITY_IDS[t["tool_id"]], "lifecycle": "EXPERIMENTAL", "tool_id": t["tool_id"]}
+            for t in TOOLS if t["tool_id"] in CAPABILITY_IDS]
+
 
 def element_specs() -> Dict[str, Any]:
     return {
@@ -65,6 +83,7 @@ def skill_contract() -> Dict[str, Any]:
                          "automatic title or layout generation", "click-through-rate prediction", "A/B testing", "publish decisions",
                          "video editing", "color grading", "subtitle rendering", "arbitrary ffmpeg filters", "shell execution", "network access"],
         "tools": [dict(t) for t in TOOLS],
+        "provides": capability_provides(),
         "document": {"schema": REQUEST_SCHEMA_ID, "id_pattern": ID_RE.pattern, "forbidden_fields": sorted(FORBIDDEN_KEYS),
                      "canvas": {"width": f"{MIN_CANVAS}..{MAX_CANVAS}", "height": f"{MIN_CANVAS}..{MAX_CANVAS}", "background": "#RRGGBB(AA), default #000000"},
                      "assets": {"kinds": list(ASSET_KINDS), "max_assets": MAX_ASSETS,
@@ -91,4 +110,4 @@ def skill_contract() -> Dict[str, Any]:
     }
 
 
-__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "skill_contract", "element_specs"]
+__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "skill_contract", "element_specs", "capability_provides"]
