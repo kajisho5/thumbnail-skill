@@ -34,11 +34,11 @@ def build_images(directory: Path) -> Dict[str, Path]:
     return f
 
 
-def build_video(directory: Path) -> Path:
+def build_video(directory: Path, name: str = "video.mp4", source: str = "testsrc2=size=320x180:rate=10") -> Path:
     d = Path(directory)
     d.mkdir(parents=True, exist_ok=True)
-    path = d / "video.mp4"
-    subprocess.run(FF + ["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=10", "-t", "3",
+    path = d / name
+    subprocess.run(FF + ["-f", "lavfi", "-i", source, "-t", "3",
                          "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(path)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     return path
@@ -48,4 +48,7 @@ def build_all(directory: Path) -> Dict[str, Path]:
     files = build_images(directory)
     if ffmpeg_available():
         files["video"] = build_video(directory)
+        # a second, content-different video (a plain colour source, not the moving test pattern) to
+        # prove asset identity is keyed by content, not just by which asset_id/path was used
+        files["video2"] = build_video(directory, name="video2.mp4", source="color=c=blue:size=320x180:rate=10")
     return files

@@ -74,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--allowed-input", action="append")
     run.add_argument("--ffmpeg-skill")
     run.add_argument("--timeout", type=float, default=120.0)
-    run.set_defaults(json=True)
+    run.add_argument("--json", action="store_true", default=True, help="accepted for consistency with the other subcommands; `run` always prints exactly one JSON document")
     return ap
 
 
@@ -131,9 +131,14 @@ def _human(doc: dict) -> None:
 
 def _run_tool_command(tool: str, args: argparse.Namespace) -> dict:
     document = _read_document(args.request)
+    if not isinstance(document, dict):
+        raise ThumbnailError("INVALID_REQUEST", "request document must be a JSON object", {"field": "document"})
     policy = PathPolicy(args.workspace, args.allowed_input)
     params = dict(document)
-    options = dict(params.get("options") or {})
+    raw_options = params.get("options")
+    if raw_options is not None and not isinstance(raw_options, dict):
+        raise ThumbnailError("INVALID_REQUEST", "'options' must be a JSON object", {"field": "options"})
+    options = dict(raw_options or {})
     if args.no_reuse:
         options["reuse"] = False
     if "timeout" not in options and args.timeout:
@@ -156,6 +161,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0 if doc["status"] != "fail" else 1
         elif args.cmd == "validate":
             params = _read_document(args.request)
+            if not isinstance(params, dict):
+                raise ThumbnailError("INVALID_REQUEST", "request document must be a JSON object", {"field": "document"})
             doc = run_tool("thumbnail/validate", params if "document" in params else {"document": params})
         elif args.cmd == "render":
             doc = _run_tool_command("thumbnail/render", args)
@@ -186,8 +193,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         _emit(doc, as_json)
         return e.exit_code
     _emit(doc, as_json)
-    if isinstance(doc, dict) and doc.get("ok") is False:
-        err = doc.get("error") or (doc.get("result") or {}).get("error") or {}
+    return _exit_code_for(doc)
+
+
+def _exit_code_for(doc: Any) -> int:
+    """0 only when the actual tool response succeeded. `thumbnail run -` wraps the tool's own
+    response in {"ok": true, "tool", "result": <response>}: that outer "ok" means only "the request
+    was well-formed and dispatched", so it stays true even when the nested `result` failed. Every
+    other command's `doc` carries the tool's own {"ok", "error"} directly. Checking the outer "ok"
+    alone would make `run -` report exit 0 for a request that actually failed to render."""
+    if not isinstance(doc, dict):
+        return 0
+    body = doc["result"] if isinstance(doc.get("result"), dict) and "ok" in doc["result"] else doc
+    if body.get("ok") is False:
+        err = body.get("error") or {}
         return EXIT_CODES.get(err.get("code", "INTERNAL_ERROR"), EXIT_CODES["INTERNAL_ERROR"])
     return 0
 

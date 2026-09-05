@@ -86,6 +86,12 @@ class Executor:
                                      {"reason": "ffmpeg_skill_incompatible", "problems": info.problems}, retryable=False)
         return self._skill
 
+    def _ffmpeg_skill_version(self) -> Optional[str]:
+        """The ffmpeg-skill version actually engaged for this request, or None when no video_frame
+        asset needed it. Included in identity so an ffmpeg-skill upgrade that changes what `look`
+        decodes for the same timestamp busts the cache instead of silently reusing a stale frame."""
+        return self._skill.info().version if self._skill is not None else None
+
     # ---- envelope
     def _envelope(self, ok: bool, status: str, body: Dict[str, Any]) -> Dict[str, Any]:
         doc: Dict[str, Any] = {"schema": RESPONSE_SCHEMA_ID, "skill": {"id": SKILL_ID, "version": VERSION}, "ok": ok, "status": status}
@@ -137,7 +143,13 @@ class Executor:
         if not meta.get("video"):
             raise ThumbnailError("INVALID_INPUT", f"asset {asset.asset_id!r} has no video stream", {"asset_id": asset.asset_id, "reason": "no_video_stream"})
         duration = float(meta.get("duration") or 0.0)
-        if asset.timestamp is not None and duration > 0 and asset.timestamp > duration:
+        if duration <= 0:
+            # a video with no known duration is a fact we cannot verify a timestamp against: treat it
+            # as an unusable input rather than silently skipping the beyond-duration check below
+            # (matching audio-production-skill's own SOURCE_TRACK rule: duration <= 0 is INVALID_INPUT)
+            raise ThumbnailError("INVALID_INPUT", f"asset {asset.asset_id!r}: source video has no known duration; cannot verify the timestamp is in range",
+                                 {"asset_id": asset.asset_id, "reason": "no_duration"})
+        if asset.timestamp is not None and asset.timestamp > duration:
             raise ThumbnailError("INVALID_TIME_RANGE", f"asset {asset.asset_id!r}: timestamp {asset.timestamp}s is beyond the source duration ({duration:.3f}s)",
                                  {"asset_id": asset.asset_id, "timestamp": asset.timestamp, "duration": duration})
         return {"asset_id": asset.asset_id, "kind": "video_frame", "path": str(resolved), "sha256": sha256_file(str(resolved)),
@@ -223,7 +235,7 @@ class Executor:
         fonts_used = self._resolve_font_identities(document)
         identity_doc = {"document": document.to_dict(), "output_format": out.format, "jpeg_quality": out.jpeg_quality if out.format == "jpeg" else None,
                         "assets": {aid: {k: v for k, v in ident.items() if k != "path"} for aid, ident in asset_identities.items()},
-                        "fonts": {fid: rf.sha256 for fid, rf in fonts_used.items()}}
+                        "fonts": {fid: rf.sha256 for fid, rf in fonts_used.items()}, "ffmpeg_skill_version": self._ffmpeg_skill_version()}
         identity = self._identity("render", identity_doc)
 
         target = self.policy.resolve_write_path(out.path, "output")   # raise early (traversal, workspace) before any work
@@ -339,12 +351,15 @@ class Executor:
         if not meta.get("video"):
             raise ThumbnailError("INVALID_INPUT", "source has no video stream", {"reason": "no_video_stream"})
         duration = float(meta.get("duration") or 0.0)
-        if duration > 0 and ts > duration:
+        if duration <= 0:
+            raise ThumbnailError("INVALID_INPUT", "source video has no known duration; cannot verify the timestamp is in range", {"reason": "no_duration"})
+        if ts > duration:
             raise ThumbnailError("INVALID_TIME_RANGE", f"timestamp {ts}s is beyond the source duration ({duration:.3f}s)", {"timestamp": ts, "duration": duration})
 
         source_sha = sha256_file(str(resolved))
         identity = self._identity("extract_frame", {"source_sha256": source_sha, "timestamp": float(ts), "output_format": out.format,
-                                                      "jpeg_quality": out.jpeg_quality if out.format == "jpeg" else None})
+                                                      "jpeg_quality": out.jpeg_quality if out.format == "jpeg" else None,
+                                                      "ffmpeg_skill_version": self._ffmpeg_skill_version()})
         target = self.policy.resolve_write_path(out.path, "output")
         if target.exists() and not out.overwrite:
             raise ThumbnailError("OUTPUT_ERROR", f"output already exists (set overwrite: true to replace it): {target}", {"reason": "exists", "path": str(target)})

@@ -84,11 +84,48 @@ def test_output_traversal_rejected(tmp_path):
     assert e.value.details.get("reason") == "traversal"
 
 
+def test_output_prefix_collision_is_not_containment(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    evil_sibling = tmp_path / "ws_evil"
+    evil_sibling.mkdir()
+    policy = PathPolicy(str(workspace))
+    with pytest.raises(ThumbnailError) as e:
+        policy.resolve_write_path(str(evil_sibling / "out.png"), "output")
+    assert e.value.code == "PATH_NOT_ALLOWED"
+    assert e.value.details.get("reason") == "outside_workspace"
+
+
 def test_output_outside_workspace_rejected(tmp_path):
     policy = PathPolicy(str(tmp_path))
     with pytest.raises(ThumbnailError) as e:
         policy.resolve_write_path("/etc/should-not-be-writable.png", "output")
     assert e.value.code == "PATH_NOT_ALLOWED"
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="symlinks need elevated privileges on Windows CI")
+def test_output_dangling_symlink_escape_rejected(tmp_path):
+    """A *dangling* symlink at the exact output path (its target does not exist yet) must not let a
+    write escape the workspace. `Path.exists()` is False for a dangling symlink, so a naive
+    "resolve the nearest existing ancestor" scheme never notices the final component is a symlink at
+    all, approves it, and `shutil.copyfile` then creates the real file at the symlink's target via
+    the OS's own symlink-following `open()` — outside the workspace. `resolve_write_path` must use a
+    resolution that follows the symlink chain (os.path.realpath) before checking containment."""
+    outside_target = tmp_path.parent / f"escape_target_{tmp_path.name}.png"
+    if outside_target.exists():
+        outside_target.unlink()
+    link = tmp_path / "innocent.png"
+    os.symlink(str(outside_target), str(link))
+    assert not outside_target.exists()   # dangling: the symlink's target does not exist yet
+    policy = PathPolicy(str(tmp_path))
+    try:
+        with pytest.raises(ThumbnailError) as e:
+            policy.resolve_write_path("innocent.png", "output")
+        assert e.value.code == "PATH_NOT_ALLOWED"
+    finally:
+        if outside_target.exists():
+            outside_target.unlink()   # prove nothing was ever written there, then clean up defensively
+    assert not outside_target.exists()
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="symlinked directories need elevated privileges on Windows CI")

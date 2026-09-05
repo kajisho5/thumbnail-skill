@@ -150,6 +150,47 @@ def test_provenance_fields_present(media, workspace):
     assert prov["fonts"][0]["font_file_hash"].startswith("sha256:")
 
 
+# ---- identity must change with content, and only with content that actually changed (section 10)
+
+def test_identity_changes_with_image_content(media, workspace):
+    doc1 = basic_document(media)
+    doc2 = basic_document(media)
+    doc2["assets"][0]["path"] = str(media["bg_png"])   # different background image content
+    r1 = render(doc1, {"path": str(workspace / "a.png"), "format": "png"}, workspace)
+    r2 = render(doc2, {"path": str(workspace / "b.png"), "format": "png"}, workspace)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+
+
+def test_identity_changes_with_font(media, workspace):
+    doc1 = basic_document(media)
+    doc2 = basic_document(media)
+    doc2["elements"][2]["text"]["font_id"] = "serif"
+    r1 = render(doc1, {"path": str(workspace / "a.png"), "format": "png"}, workspace)
+    r2 = render(doc2, {"path": str(workspace / "b.png"), "format": "png"}, workspace)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+    assert r1["provenance"]["fonts"][0]["font_id"] != r2["provenance"]["fonts"][0]["font_id"]
+
+
+def test_identity_changes_with_document_structure(media, workspace):
+    """Same assets and fonts, different layout (z_index): still a different identity."""
+    doc1 = basic_document(media)
+    doc2 = basic_document(media)
+    doc2["elements"][2]["z_index"] = 999
+    r1 = render(doc1, {"path": str(workspace / "a.png"), "format": "png"}, workspace)
+    r2 = render(doc2, {"path": str(workspace / "b.png"), "format": "png"}, workspace)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+
+
+def test_identity_changes_with_engine_version(monkeypatch, media, workspace):
+    import thumbnail_skill.executor as executor_mod
+    doc = basic_document(media)
+    r1 = render(doc, {"path": str(workspace / "a.png"), "format": "png"}, workspace)
+    monkeypatch.setattr(executor_mod, "_engine_version", lambda: "999.999.999-fake")
+    r2 = render(doc, {"path": str(workspace / "b.png"), "format": "png"}, workspace)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+    assert r2["provenance"]["engine_version"] == "999.999.999-fake"
+
+
 def test_missing_asset_file_is_invalid_input(media, workspace):
     doc = basic_document(media)
     doc["assets"][0]["path"] = str(workspace / "does_not_exist.png")
@@ -220,6 +261,82 @@ def test_video_frame_timestamp_beyond_duration_rejected(media, workspace, ffmpeg
     res = render(doc, {"path": str(workspace / "out.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
     assert res["ok"] is False
     assert res["error"]["code"] == "INVALID_TIME_RANGE"
+
+
+def test_identity_changes_with_timestamp(media, workspace, ffmpeg_skill_dir, has_ffmpeg):
+    if "video" not in media or not has_ffmpeg:
+        import pytest
+        pytest.skip("ffmpeg not available to build the video fixture")
+    def vf_doc(ts):
+        return {"document_id": "vf-id", "canvas": {"width": 320, "height": 180},
+                "assets": [{"asset_id": "frame", "kind": "video_frame", "path": str(media["video"]), "timestamp": ts}],
+                "elements": [{"element_id": "e", "type": "image", "image": {"asset_id": "frame", "position": {"x": 0, "y": 0}, "size": {"width": 320, "height": 180}}}]}
+    r1 = render(vf_doc(1.0), {"path": str(workspace / "a.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    r2 = render(vf_doc(2.0), {"path": str(workspace / "b.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+
+
+def test_identity_changes_with_source_video(media, workspace, ffmpeg_skill_dir, has_ffmpeg):
+    if "video2" not in media or not has_ffmpeg:
+        import pytest
+        pytest.skip("ffmpeg not available to build the video fixtures")
+    def vf_doc(video_path):
+        return {"document_id": "vf-src", "canvas": {"width": 320, "height": 180},
+                "assets": [{"asset_id": "frame", "kind": "video_frame", "path": str(video_path), "timestamp": 1.0}],
+                "elements": [{"element_id": "e", "type": "image", "image": {"asset_id": "frame", "position": {"x": 0, "y": 0}, "size": {"width": 320, "height": 180}}}]}
+    r1 = render(vf_doc(media["video"]), {"path": str(workspace / "a.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    r2 = render(vf_doc(media["video2"]), {"path": str(workspace / "b.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+    assert r1["provenance"]["assets"][0]["sha256"] != r2["provenance"]["assets"][0]["sha256"]
+
+
+def test_identity_changes_with_ffmpeg_skill_version(monkeypatch, media, workspace, ffmpeg_skill_dir, has_ffmpeg):
+    """An ffmpeg-skill upgrade that changes what `look` decodes for the same timestamp must bust the
+    cache: identity is not allowed to depend on Pillow's version alone when a video_frame asset is
+    the thing that actually produced the pixels ffmpeg-skill decoded."""
+    if "video" not in media or not has_ffmpeg:
+        import pytest
+        pytest.skip("ffmpeg not available to build the video fixture")
+    from thumbnail_skill.executor import Executor
+    doc = {"document_id": "vf-ffver", "canvas": {"width": 320, "height": 180},
+           "assets": [{"asset_id": "frame", "kind": "video_frame", "path": str(media["video"]), "timestamp": 1.0}],
+           "elements": [{"element_id": "e", "type": "image", "image": {"asset_id": "frame", "position": {"x": 0, "y": 0}, "size": {"width": 320, "height": 180}}}]}
+    r1 = render(doc, {"path": str(workspace / "a.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    monkeypatch.setattr(Executor, "_ffmpeg_skill_version", lambda self: "9.9.9-fake-upgrade")
+    r2 = render(doc, {"path": str(workspace / "b.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    assert r1["provenance"]["identity"] != r2["provenance"]["identity"]
+    assert r2["reused"] is False
+
+
+def test_video_with_unknown_duration_is_invalid_input(media, workspace, ffmpeg_skill_dir, has_ffmpeg, monkeypatch):
+    """A video whose duration cannot be established must refuse the timestamp check outright rather
+    than silently skipping it (which would let an out-of-range timestamp through unnoticed)."""
+    if "video" not in media or not has_ffmpeg:
+        import pytest
+        pytest.skip("ffmpeg not available to build the video fixture")
+    from thumbnail_skill.adapter import FfmpegSkill
+    orig_probe = FfmpegSkill.probe
+
+    def fake_probe(self, path, timeout=None):
+        meta = orig_probe(self, path, timeout)
+        meta["duration"] = 0.0
+        return meta
+
+    monkeypatch.setattr(FfmpegSkill, "probe", fake_probe)
+    doc = {"document_id": "vf-noduration", "canvas": {"width": 320, "height": 180},
+           "assets": [{"asset_id": "frame", "kind": "video_frame", "path": str(media["video"]), "timestamp": 1.0}],
+           "elements": [{"element_id": "e", "type": "image", "image": {"asset_id": "frame", "position": {"x": 0, "y": 0}, "size": {"width": 320, "height": 180}}}]}
+    res = render(doc, {"path": str(workspace / "out.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    assert res["ok"] is False
+    assert res["error"]["code"] == "INVALID_INPUT"
+    assert res["error"]["details"].get("reason") == "no_duration"
+
+    policy = PathPolicy(str(workspace))
+    res2 = run_tool("thumbnail/extract_frame", {"source": {"path": str(media["video"]), "timestamp": 1.0}, "output": {"path": str(workspace / "f.png"), "format": "png"}},
+                    policy, ffmpeg_skill_dir)
+    assert res2["ok"] is False
+    assert res2["error"]["code"] == "INVALID_INPUT"
+    assert res2["error"]["details"].get("reason") == "no_duration"
 
 
 def test_extract_frame_tool_matches_timestamp(media, workspace, ffmpeg_skill_dir, has_ffmpeg):

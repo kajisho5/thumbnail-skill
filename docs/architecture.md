@@ -23,7 +23,10 @@ params (JSON)
                                              image:       Pillow open+verify -> sha256
                                              video_frame: ffmpeg-skill/probe (duration, timestamp bound) -> sha256 of the *source video*
   -> Executor._resolve_font_identities    fonts.resolve_font() per font_id actually used by a text element
-  -> Executor._identity                   sha256 of canonical JSON {document, asset content identity, font content identity, skill+engine version}
+  -> Executor._identity                   sha256 of canonical JSON {document, asset content identity, font content identity,
+                                             skill+Pillow version, and the ffmpeg-skill version actually engaged (None when
+                                             every asset is a still image) so an ffmpeg-skill upgrade that changes what a
+                                             given timestamp decodes to busts the cache instead of reusing a stale frame
   -> Executor._try_reuse                  cache hit? re-validate the cached file, copy it to the output path, done (video is never decoded)
   -> (miss) resolve each asset to a Pillow Image
        image:       already opened above

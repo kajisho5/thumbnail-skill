@@ -100,29 +100,33 @@ class PathPolicy:
 
     # ---- writes
     def resolve_write_path(self, path: object, what: str = "output", allow_dir: bool = False) -> Path:
-        """A file this skill may create. Must resolve inside the workspace (deepest existing ancestor
-        resolved so a symlinked directory cannot escape), with a safe file name in every component
-        that does not exist yet."""
+        """A file this skill may create. Must resolve inside the workspace, with a safe file name in
+        every component of the path.
+
+        Resolution uses `os.path.realpath`, not a "walk up to the nearest existing ancestor" scheme:
+        realpath follows every symlink in the chain component-by-component even when the final
+        component doesn't exist yet, which a `Path.exists()`-gated walk does not. That distinction
+        matters here specifically: a *dangling* symlink placed at the exact output path (existing on
+        disk, but pointing at a target that doesn't exist yet) makes `Path.exists()` return False, so
+        an existence-gated walk treats the symlink's own name as a literal path component to create —
+        never noticing it is a symlink at all — and a subsequent `open(path, "wb")` would then create
+        the real file at the symlink's target, silently escaping the workspace. realpath closes this
+        by resolving the dangling link textually before the containment check ever runs."""
         text = _check_path_string(path, what)
+        if any(part == ".." for part in Path(text).parts):
+            raise ThumbnailError("PATH_NOT_ALLOWED", f"{what} path may not contain '..': {text}", {"reason": "traversal"})
         target = Path(text)
         if not target.is_absolute():
             target = self.workspace / target
-        if any(part == ".." for part in Path(text).parts):
-            raise ThumbnailError("PATH_NOT_ALLOWED", f"{what} path may not contain '..': {text}", {"reason": "traversal"})
-        probe = target
-        while not probe.exists() and probe.parent != probe:
-            probe = probe.parent
         try:
-            base = probe.resolve()
+            resolved = Path(os.path.realpath(str(target)))
         except (OSError, RuntimeError) as e:
             raise ThumbnailError("PATH_NOT_ALLOWED", f"cannot resolve {what} path: {e}", {"reason": "unresolvable"})
-        resolved = base / target.relative_to(probe) if probe != target else base
         if not _under(resolved, self.workspace):
             raise ThumbnailError("PATH_NOT_ALLOWED", f"{what} is outside the workspace: {text}",
                                  {"reason": "outside_workspace", "workspace": str(self.workspace)})
-        for part in target.relative_to(probe).parts if probe != target else (target.name,):
+        for part in resolved.relative_to(self.workspace).parts:
             check_filename(part)
-        check_filename(resolved.name)
         if resolved.exists() and not (resolved.is_dir() if allow_dir else resolved.is_file()):
             raise ThumbnailError("OUTPUT_ERROR", f"{what} exists and is not a regular {'directory' if allow_dir else 'file'}: {text}", {"reason": "wrong_kind"})
         return resolved

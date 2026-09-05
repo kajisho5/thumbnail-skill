@@ -52,13 +52,21 @@ Rules for a write (`output.path`, the reuse cache under
 
 1. A literal `..` path component anywhere in the given string is refused outright
    (`PATH_NOT_ALLOWED`, reason `traversal`) before any resolution happens.
-2. The target is resolved against the deepest existing ancestor (so a symlinked directory earlier
-   in the path cannot redirect the write) and must land inside the resolved workspace.
-3. Every path component that does not exist yet is checked by `check_filename`: no NUL or control
-   characters, no `<>:"|?*`, not `.`/`..`, not longer than 255 bytes, not a Windows reserved device
-   name (`CON`, `PRN`, `COM1`.. `LPT9`), no trailing space or dot, and does not start with `-`
-   (which could otherwise be parsed as a flag if this value ever reached a CLI — it never does, but
-   the check costs nothing and closes the class of bug outright).
+2. The target is resolved with `os.path.realpath`, which follows every symlink in the chain
+   component-by-component even when the final component doesn't exist yet, and must land inside the
+   resolved workspace. This is deliberately not a "resolve the nearest existing ancestor" scheme: a
+   *dangling* symlink at the exact output path (its target does not exist yet) makes `Path.exists()`
+   return False, so an existence-gated walk never notices the final component is a symlink at all —
+   it approves the write, and the OS's own symlink-following `open()` then creates the real file at
+   the symlink's target, outside the workspace. `os.path.realpath` resolves the dangling link
+   textually before containment is ever checked, closing that path
+   (`tests/test_security.py::test_output_dangling_symlink_escape_rejected` proves it, both that the
+   fix rejects it and that the earlier scheme did not).
+3. Every path component under the workspace, in the *resolved* path, is checked by `check_filename`:
+   no NUL or control characters, no `<>:"|?*`, not `.`/`..`, not longer than 255 bytes, not a Windows
+   reserved device name (`CON`, `PRN`, `COM1`.. `LPT9`), no trailing space or dot, and does not start
+   with `-` (which could otherwise be parsed as a flag if this value ever reached a CLI — it never
+   does, but the check costs nothing and closes the class of bug outright).
 4. An existing path that isn't the right kind of thing (a file where a directory was expected, or
    the reverse) is refused; an existing output file is refused unless `overwrite: true`.
 

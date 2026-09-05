@@ -165,16 +165,21 @@ canvas dimensions, non-empty, sha256 recorded.
 
 ## Deterministic execution and reuse
 
-Given the same document, the same asset/font *content* (by sha256, not by path) and the same
-skill/Pillow version, `thumbnail/render` and `thumbnail/extract_frame` reuse a cached artifact
-instead of re-rendering; a `video_frame` asset's identity is its **source video's** sha256 plus the
-requested timestamp, not the decoded frame's bytes, so a cache hit never has to decode video. A
-cache entry is re-validated (exists, opens as the declared format, size and dimensions match) before
-being reused; a corrupted entry is rebuilt, never returned as `reused: true`. No randomness anywhere
-in the render path. Two renders of the same document on the same machine produce byte-identical
-output; across machines, only the resolved font file and Pillow version need to match for the same
-guarantee (both are recorded in `provenance`, matching ffmpeg-skill's own `content_equivalent`
-convention for environment-dependent encoders).
+Given the same document, the same asset/font *content* (by sha256, not by path), the same
+skill/Pillow version and — when a `video_frame` asset is involved — the same ffmpeg-skill version,
+`thumbnail/render` and `thumbnail/extract_frame` reuse a cached artifact instead of re-rendering; a
+`video_frame` asset's identity is its **source video's** sha256 plus the requested timestamp, not the
+decoded frame's bytes, so a cache hit never has to decode video. Any of those inputs changing —
+different image bytes, a different font, a different document (layout, z-order, text, ...), a
+different timestamp, a different source video, an ffmpeg-skill or Pillow upgrade — changes the
+identity and busts the cache; a source video whose duration cannot be established at all is refused
+outright (`INVALID_INPUT`) rather than silently skipping the beyond-duration check. A cache entry is
+re-validated (exists, opens as the declared format, size and dimensions match) before being reused; a
+corrupted entry is rebuilt, never returned as `reused: true`. No randomness anywhere in the render
+path. Two renders of the same document on the same machine produce byte-identical output; across
+machines, only the resolved font file, the Pillow version and (for `video_frame`) the ffmpeg-skill
+version need to match for the same guarantee (all are recorded in `provenance`, matching
+ffmpeg-skill's own `content_equivalent` convention for environment-dependent encoders).
 
 ## Error codes
 
