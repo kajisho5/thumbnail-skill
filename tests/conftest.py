@@ -6,6 +6,8 @@ from typing import Dict
 
 import pytest
 
+from thumbnail_skill.fonts import font_status
+
 from .fixtures.generate import build_all, ffmpeg_available
 
 
@@ -42,3 +44,12 @@ def ffmpeg_skill_dir() -> str:
 @pytest.fixture(scope="session")
 def has_ffmpeg() -> bool:
     return ffmpeg_available()
+
+
+@pytest.fixture(scope="session")
+def has_cjk_font() -> bool:
+    """Whether fonts.py's `cjk` font_id actually resolves on this machine. A bare CI runner may not
+    have a CJK-capable font installed (see .github/workflows/tests.yml for the Linux package this
+    repo installs); tests exercising CJK glyph rendering skip cleanly rather than failing on an
+    environment gap that isn't a code defect."""
+    return font_status("cjk")["status"] == "available"

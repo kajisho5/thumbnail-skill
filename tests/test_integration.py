@@ -122,7 +122,10 @@ def test_image_fit_modes_produce_expected_dimensions(media, workspace):
         assert Image.open(out).size == (300, 300)   # canvas size is always exactly what was declared
 
 
-def test_multiline_unicode_text_renders(media, workspace):
+def test_multiline_unicode_text_renders(media, workspace, has_cjk_font):
+    if not has_cjk_font:
+        import pytest
+        pytest.skip("no CJK-capable font resolvable on this machine (see fonts.py / thumbnail doctor)")
     doc = {"document_id": "text", "canvas": {"width": 800, "height": 200, "background": "#000000"}, "assets": [],
            "elements": [{"element_id": "t", "type": "text", "text": {"text": "第38回学会\n特別講演のお知らせ 🎤", "font_id": "cjk", "font_size": 32,
                         "color": "#ffffff", "position": {"x": 10, "y": 10}}}]}
