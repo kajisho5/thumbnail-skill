@@ -37,8 +37,11 @@ TOOLS: List[Dict[str, Any]] = [
 ]
 
 # Cross-repository Capability ids (kajisho5/AI-video-production-OS docs/SPEC.md
-# `CapabilityContract.provides`), matching the ids already assigned to this Skill in that
-# project's own docs/CAPABILITY_MATRIX.md. Only tools with produces_output True get one:
+# `CapabilityContract.provides`), matching the ids proposed for this Skill in that project's
+# own docs/CAPABILITY_MATRIX.md (as of this writing, on its unmerged `claude/ai-video-
+# production-os-arch-fck6fy` branch, not yet on that repo's main -- hence lifecycle
+# EXPERIMENTAL here too, not a claim of a finalized cross-repo contract). Only tools with
+# produces_output True get one:
 # a Capability id names something that produces an Artifact, and `thumbnail/validate`
 # (produces_output False, a structural pre-flight check) does not.
 CAPABILITY_IDS: Dict[str, str] = {
