@@ -15,7 +15,8 @@ ERROR_TABLE: Dict[str, Any] = {
     "UNSUPPORTED_OPERATION": (5, False),   # tool name not implemented by this skill
     "UNSUPPORTED_FORMAT": (6, False),      # output/element format not in the contract
     "MISSING_INPUT": (7, False),           # an element references an asset_id / font_id that is not declared or not registered
-    "INVALID_TIME_RANGE": (8, False),      # a video_frame timestamp is negative, non-finite, or beyond the source duration
+    "INVALID_TIME_RANGE": (8, False),      # a video_frame timestamp is negative, non-finite, beyond the source duration, or lands
+                                            # after the last frame actually decodable from the source (see adapter.extract_frame)
     "DEPENDENCY_ERROR": (11, False),       # duplicate id, self-reference, or another structural inconsistency
     "TOOL_ERROR": (12, True),              # ffmpeg-skill / ffmpeg failed, timed out, or is unavailable
     "OUTPUT_ERROR": (13, False),           # output could not be written, is empty, collides with an input, or exists

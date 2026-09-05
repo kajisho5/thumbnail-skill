@@ -175,7 +175,7 @@ class Executor:
             return None
         try:
             manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             return None
         if manifest.get("schema") != MANIFEST_SCHEMA or manifest.get("identity") != identity:
             return None

@@ -131,7 +131,11 @@ Adding a font means adding a registry entry (a reviewed change), not a runtime d
 no "most representative frame" search anywhere in this skill — if that is ever needed, it belongs
 in a separate analysis/inference layer that hands this skill a concrete timestamp. A timestamp
 beyond the source's own duration is `INVALID_TIME_RANGE`; a negative or non-finite one is rejected
-before ffmpeg-skill is ever invoked.
+before ffmpeg-skill is ever invoked. A timestamp that is technically within the reported duration but
+lands after the last frame actually decodable from the source (a container's `duration` commonly
+extends about one frame interval past the last frame's own timestamp, so the very end of any video
+has a small window like this) is also `INVALID_TIME_RANGE`, not retryable: retrying the identical
+timestamp will fail identically every time, so pick an earlier one instead.
 
 ## Output formats
 
@@ -191,7 +195,7 @@ ffmpeg-skill's own `content_equivalent` convention for environment-dependent enc
 | `UNSUPPORTED_OPERATION` | unknown tool name, or an unimplemented option (e.g. arbitrary-angle rotation) |
 | `UNSUPPORTED_FORMAT` | output format not in the contract |
 | `MISSING_INPUT` | an element references an `asset_id`/`font_id` that is not declared or not registered |
-| `INVALID_TIME_RANGE` | a `video_frame` timestamp is negative, non-finite, or beyond the source's duration |
+| `INVALID_TIME_RANGE` | a `video_frame` timestamp is negative, non-finite, beyond the source's duration, or lands after the last decodable frame (not retryable) |
 | `DEPENDENCY_ERROR` | duplicate id or another structural inconsistency |
 | `TOOL_ERROR` | ffmpeg-skill failed, timed out, or is unavailable |
 | `OUTPUT_ERROR` | output could not be written, is empty, collides with an input, or already exists |

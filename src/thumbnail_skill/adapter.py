@@ -234,7 +234,18 @@ class FfmpegSkill:
 
     def extract_frame(self, video_path: str, timestamp: float, out_dir: Path, stem: str, timeout: Optional[float] = None) -> Path:
         """Extract exactly the frame at `timestamp` (no scene detection, no scoring) as a PNG under
-        `out_dir`, named deterministically by ffmpeg-skill/look. Returns the resulting file path."""
+        `out_dir`, named deterministically by ffmpeg-skill/look. Returns the resulting file path.
+
+        ffmpeg-skill/look reports `{"status": "completed", "output": ...}` even when the underlying
+        `ffmpeg -ss <timestamp>` decoded zero frames and wrote nothing: this happens for any timestamp
+        landing after the last frame actually present in the stream but at or before the container's
+        reported `duration` (duration commonly extends slightly past the last frame's own PTS — the
+        gap is one frame interval, so on a 10 fps video the last ~0.1s of `duration` has no frame to
+        seek to). That is a fact about the caller's timestamp, not a transient tool failure: retrying
+        the identical request will fail identically forever. So this is reported as `INVALID_TIME_RANGE`
+        (not retryable), never `TOOL_ERROR`, and the file's actual existence is what decides it, not
+        ffmpeg-skill's own claim of success — the same "don't trust a reported success path, check it
+        was actually written" rule executor.py applies to every artifact this skill produces."""
         run = self.run_tool("look", [video_path, "--at", fmt_seconds(timestamp), "--no-timecode", "-o", str(out_dir / stem)], timeout)
         outputs = run.data.get("outputs") or ([run.data["output"]] if run.data.get("output") else [])
         expected = out_dir / frame_filename(stem, timestamp)
@@ -244,8 +255,12 @@ class FfmpegSkill:
                 return candidate
         if expected.is_file():
             return expected
-        raise ThumbnailError("TOOL_ERROR", "ffmpeg-skill/look reported success but the expected frame file was not found",
-                             {"reason": "missing_output", "expected": str(expected), "reported_outputs": outputs})
+        raise ThumbnailError("INVALID_TIME_RANGE",
+                             f"no frame could be decoded at timestamp {timestamp}s (ffmpeg-skill/look reported success but wrote nothing; "
+                             "this timestamp is at or past the last frame actually present in the source, even though it is within the "
+                             "reported duration) — choose an earlier timestamp",
+                             {"reason": "no_frame_at_timestamp", "timestamp": timestamp, "expected": str(expected), "reported_outputs": outputs},
+                             retryable=False)
 
 
 def _parse_json(text: str) -> Dict[str, Any]:

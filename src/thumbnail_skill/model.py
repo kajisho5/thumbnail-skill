@@ -39,6 +39,7 @@ MAX_TIMESTAMP = 7 * 24 * 3600.0    # 7 days; the real ceiling is the source vide
 MAX_TEXT_LENGTH = 2000
 MAX_TEXT_LINES = 50
 MAX_METADATA_BYTES = 8192
+MAX_NESTING_DEPTH = 32   # well above any legitimate document shape, far below Python's recursion limit
 
 ASSET_KINDS = ("image", "video_frame")
 ELEMENT_TYPES = ("image", "text")
@@ -234,7 +235,15 @@ class RenderRequest:
 
 
 # ---------------------------------------------------------------- validation helpers
-def _reject_forbidden(obj: Any, where: str) -> None:
+def _reject_forbidden(obj: Any, where: str, _depth: int = 0) -> None:
+    """Recurses into the raw, not-yet-structurally-validated request looking for forbidden field
+    names -- including inside the free-form `metadata` object, which has no field allowlist of its
+    own to stop at. Runs before any other check (including MAX_METADATA_BYTES), on whatever shape
+    the caller sent, so a depth bound of its own is required: without one, a small but deeply nested
+    payload (a few KB, well under the metadata byte cap) drives Python's own recursion limit into an
+    uncaught RecursionError before any of this file's other bounds ever get a chance to apply."""
+    if _depth > MAX_NESTING_DEPTH:
+        raise ThumbnailError("INVALID_REQUEST", f"{where}: nested more than {MAX_NESTING_DEPTH} levels deep", {"field": where, "reason": "too_deeply_nested"})
     if isinstance(obj, dict):
         for k, v in obj.items():
             if not isinstance(k, str):
@@ -242,10 +251,10 @@ def _reject_forbidden(obj: Any, where: str) -> None:
             if k.lower() in FORBIDDEN_KEYS:
                 raise ThumbnailError("INVALID_REQUEST", f"{where}: field {k!r} is not accepted (this skill never takes commands, argv, filters, HTML/CSS/JS or executables)",
                                      {"field": k, "reason": "forbidden_field"})
-            _reject_forbidden(v, f"{where}.{k}")
+            _reject_forbidden(v, f"{where}.{k}", _depth + 1)
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
-            _reject_forbidden(v, f"{where}[{i}]")
+            _reject_forbidden(v, f"{where}[{i}]", _depth + 1)
 
 
 def _obj(value: Any, where: str, allowed: Tuple[str, ...], required: Tuple[str, ...]) -> Dict[str, Any]:

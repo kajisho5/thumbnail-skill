@@ -3,7 +3,9 @@ which is a different code path from calling `skill.run_tool()`/`run_request()` i
 test_integration.py and test_security.py do). Two real bugs were only reachable through this path:
 a non-dict top-level JSON document crashing with a raw Python TypeError instead of a structured
 error, and `thumbnail run -` always exiting 0 because it checked the process-boundary transport's
-outer "dispatched" flag instead of the wrapped tool response's own "ok"."""
+outer "dispatched" flag instead of the wrapped tool response's own "ok". A third — a small but
+deeply nested JSON payload crashing the stdlib `json` decoder itself with an uncaught RecursionError
+— was found by adversarial fuzzing of the same "malformed JSON never crashes" contract."""
 from __future__ import annotations
 
 import io
@@ -39,6 +41,30 @@ def test_render_with_non_dict_options_never_crashes(tmp_path, capsys):
     _write(req, {"document": {"document_id": "d", "canvas": {"width": 32, "height": 32}, "elements": []}, "options": "not-an-object"})
     code = main(["render", str(req), "--workspace", str(tmp_path), "--json"])
     out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False
+    assert out["error"]["code"] == "INVALID_REQUEST"
+    assert code == EXIT_CODES["INVALID_REQUEST"]
+
+
+@pytest.mark.parametrize("cmd", ["validate", "render", "extract-frame", "run"])
+def test_deeply_nested_json_never_crashes_the_json_decoder(tmp_path, capsys, monkeypatch, cmd):
+    """A payload well under the 16 MiB size cap (a few hundred KB) but nested a few hundred thousand
+    levels deep drives the stdlib `json` module's own decoder into Python's recursion limit before
+    this package ever sees a parsed value. Reproduced against the pre-fix CLI: `thumbnail validate`
+    exited 1 with a raw `RecursionError` traceback on stderr, not a structured document. Every entry
+    point that reads a request document (a file path, or `run -`'s stdin) shares the same parser."""
+    text = '{"a":' * 100_000 + "1" + "}" * 100_000
+    if cmd == "run":
+        monkeypatch.setattr("sys.stdin", io.StringIO(text))
+        code = main(["run", "-", "--workspace", str(tmp_path), "--json"])
+    else:
+        req = tmp_path / "deep.json"
+        req.write_text(text, encoding="utf-8")
+        args = [cmd, str(req), "--json"] if cmd == "validate" else [cmd, str(req), "--workspace", str(tmp_path), "--json"]
+        code = main(args)
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.out and "Traceback" not in captured.err
+    out = json.loads(captured.out)
     assert out["ok"] is False
     assert out["error"]["code"] == "INVALID_REQUEST"
     assert code == EXIT_CODES["INVALID_REQUEST"]

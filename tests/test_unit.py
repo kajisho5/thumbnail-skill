@@ -181,6 +181,23 @@ def test_render_request_wrong_schema_rejected():
         parse_render_request({"schema": "not-a-schema", "document": doc()})
 
 
+def test_deeply_nested_metadata_rejected_cleanly_not_a_recursion_error():
+    """`_reject_forbidden` walks the raw document (including free-form `metadata`) before any other
+    check, including the metadata byte-size cap. Without its own depth bound, a small (a few KB)
+    but deeply nested payload drives Python's recursion limit into an uncaught RecursionError before
+    MAX_METADATA_BYTES ever gets a chance to apply."""
+    nested = {}
+    cur = nested
+    for _ in range(500):
+        cur["k"] = {}
+        cur = cur["k"]
+    d = doc(metadata=nested)
+    with pytest.raises(ThumbnailError) as e:
+        parse_document(d)
+    assert e.value.code == "INVALID_REQUEST"
+    assert e.value.details.get("reason") == "too_deeply_nested"
+
+
 # ---- fonts
 
 def test_font_ids_registered():

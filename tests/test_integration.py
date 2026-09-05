@@ -263,6 +263,39 @@ def test_video_frame_timestamp_beyond_duration_rejected(media, workspace, ffmpeg
     assert res["error"]["code"] == "INVALID_TIME_RANGE"
 
 
+def test_video_frame_dead_zone_timestamp_rejected_not_retryable(media, workspace, ffmpeg_skill_dir, has_ffmpeg):
+    """ffmpeg-skill/look reports {"status": "completed"} even when ffmpeg decoded zero frames and
+    wrote nothing, which happens for any timestamp landing after the last frame actually present in
+    the stream but still <= the container's reported duration (duration commonly extends about one
+    frame interval past the last frame's own PTS). The fixture is 3.0s at 10fps, so its last frame is
+    at 2.9s; 2.95s is inside that dead zone yet not "beyond duration" by the naive definition. This
+    must be a clean, non-retryable INVALID_TIME_RANGE, never a TOOL_ERROR an agent might retry
+    forever on an input that will never succeed."""
+    if "video" not in media or not has_ffmpeg:
+        import pytest
+        pytest.skip("ffmpeg not available to build the video fixture")
+    doc = {"document_id": "vf-deadzone", "canvas": {"width": 320, "height": 180},
+           "assets": [{"asset_id": "frame", "kind": "video_frame", "path": str(media["video"]), "timestamp": 2.95}],
+           "elements": [{"element_id": "e", "type": "image", "image": {"asset_id": "frame", "position": {"x": 0, "y": 0}, "size": {"width": 320, "height": 180}}}]}
+    res = render(doc, {"path": str(workspace / "out.png"), "format": "png"}, workspace, ffmpeg_skill_dir=ffmpeg_skill_dir)
+    assert res["ok"] is False
+    assert res["error"]["code"] == "INVALID_TIME_RANGE"
+    assert res["error"]["retryable"] is False
+    assert res["error"]["details"].get("reason") == "no_frame_at_timestamp"
+
+
+def test_extract_frame_dead_zone_timestamp_rejected_not_retryable(media, workspace, ffmpeg_skill_dir, has_ffmpeg):
+    if "video" not in media or not has_ffmpeg:
+        import pytest
+        pytest.skip("ffmpeg not available to build the video fixture")
+    policy = PathPolicy(str(workspace))
+    params = {"source": {"path": str(media["video"]), "timestamp": 2.99}, "output": {"path": str(workspace / "frame.png"), "format": "png"}}
+    res = run_tool("thumbnail/extract_frame", params, policy, ffmpeg_skill_dir)
+    assert res["ok"] is False
+    assert res["error"]["code"] == "INVALID_TIME_RANGE"
+    assert res["error"]["retryable"] is False
+
+
 def test_identity_changes_with_timestamp(media, workspace, ffmpeg_skill_dir, has_ffmpeg):
     if "video" not in media or not has_ffmpeg:
         import pytest

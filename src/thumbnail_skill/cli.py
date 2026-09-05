@@ -89,6 +89,13 @@ def _read_document(spec: str) -> Any:
         return json.loads(text)
     except ValueError as e:
         raise ThumbnailError("INVALID_REQUEST", f"request document is not valid JSON: {e}")
+    except RecursionError:
+        # a small but deeply nested payload (well under the 16 MiB cap: {"a": repeated a few thousand
+        # times parses in well under 1 MiB) drives the stdlib json decoder's own recursion into
+        # Python's recursion limit before this module ever sees a parsed value. This is a shape
+        # problem with the input, not an internal fault, so it is INVALID_REQUEST like any other
+        # malformed document -- never an uncaught traceback out of the CLI.
+        raise ThumbnailError("INVALID_REQUEST", "request document is nested too deeply to parse", {"reason": "too_deeply_nested"})
 
 
 def _error_document(e: ThumbnailError) -> dict:
