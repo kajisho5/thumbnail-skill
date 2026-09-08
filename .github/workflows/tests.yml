@@ -41,7 +41,7 @@ jobs:
       - name: Fetch ffmpeg-skill (video frame decoding only; pinned to the commit this skill was verified against)
         run: |
           git clone https://github.com/kajisho5/ffmpeg-skill vendor/ffmpeg-skill
-          git -C vendor/ffmpeg-skill checkout 2abd89c
+          git -C vendor/ffmpeg-skill checkout 336e0c4d6311d2407daaa529ad71fee641f59b37
         shell: bash
       - run: ffprobe -version
         shell: bash
