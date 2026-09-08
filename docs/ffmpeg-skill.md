@@ -1,7 +1,10 @@
 # ffmpeg-skill relationship
 
 thumbnail-skill is a client of ffmpeg-skill's **public contract** (`ffmpeg-skill contract --json`,
-`contract_version "1.0"`; verified against ffmpeg-skill 0.9.1 at commit `2abd89c`). It never calls
+`contract_version "1.0"`; originally verified against ffmpeg-skill 0.9.1 at commit `2abd89c`,
+re-verified against 0.12.2 at commit `336e0c4` -- CI's pinned checkout was updated to match after
+`look.py`'s dead-zone-timestamp reclassification fix (#5) was found to depend on 0.11.0's
+"fail loudly" behaviour, which a CI still pinned to 0.9.1 would never actually exercise). It never calls
 `ffmpeg`/`ffprobe` itself — `adapter.py` is the only place a subprocess is started, and it only ever
 invokes ffmpeg-skill's own typed CLI.
 
