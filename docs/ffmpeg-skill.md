@@ -29,19 +29,31 @@ exactly one frame at one caller-decided timestamp, never a "best of several" sea
 belongs to a caller (video-production-agent), not to this skill (see README's responsibility
 boundary).
 
-## Observed behaviour this skill relies on (measured, ffmpeg-skill 0.9.1 / real ffmpeg)
+## Observed behaviour this skill relies on (measured, ffmpeg-skill 0.12.2 / real ffmpeg; contract
+verified against 0.9.1 at commit `2abd89c` and unchanged in shape through 0.12.2)
 
 - `look.py --at <timestamp> --no-timecode -o <stem>` writes exactly one file, named
-  `<stem>_<timestamp:.3f>s.png` (`adapter.frame_filename()`), and reports it in `outputs`/`output`.
-- `look.py` reports `{"status": "completed"}` — a claimed success — even when the underlying
-  `ffmpeg -ss <timestamp>` decoded zero frames and wrote nothing. Measured on a 3.0s / 10 fps test
-  video: timestamps from roughly 2.91s up to (and including) the reported 3.0s `duration` produce
-  this false-success/no-file outcome, because a container's `duration` commonly extends about one
-  frame interval past the last frame's own PTS. thumbnail-skill treats the output file's actual
-  existence, not ffmpeg-skill's own status, as ground truth, and reports this specific outcome as
-  `INVALID_TIME_RANGE` (non-retryable) rather than `TOOL_ERROR` — see ADR-5 in docs/decisions.md and
-  `adapter.extract_frame()`'s docstring. This is a property of ffmpeg-skill/`ffmpeg -ss` seeking, not
-  of thumbnail-skill; it is not something thumbnail-skill works around with its own ffmpeg call.
+  `<stem>_<timestamp:.3f>s.png` (`adapter.frame_filename()`), and reports it in `outputs`/`output`
+  on success.
+- A timestamp landing after the last frame actually present in the stream but at or before the
+  reported `duration` (a container's `duration` commonly extends about one frame interval past the
+  last frame's own PTS) makes the underlying `ffmpeg -ss <timestamp>` decode zero frames and write
+  nothing. Measured on a 3.0s / 10 fps test video: timestamps from roughly 2.91s up to (and
+  including) the reported 3.0s `duration` fall in this dead zone. As of ffmpeg-skill 0.11.0's "fail
+  loudly" pass (see ffmpeg-skill/CHANGELOG.md), `look.py` verifies its own output before reporting
+  success and now reports this dead zone as a hard, `--json` failure document: `{"status": "failed",
+  "exit_code": 1, "error": {"kind": "output", "code": "OUTPUT_INVALID", "message": "output
+  verification failed: <path>: not written", "retryable": false}}` (before 0.11.0, measured against
+  0.9.1, `look.py` instead claimed `{"status": "completed"}` while writing nothing — the false-
+  success/no-file outcome this skill's ADR-5 was originally written against). Either way this is a
+  property of ffmpeg-skill/`ffmpeg -ss` seeking a timestamp with nothing there to decode, not of
+  thumbnail-skill; it is not something thumbnail-skill works around with its own ffmpeg call.
+  thumbnail-skill reports this specific outcome as `INVALID_TIME_RANGE` (non-retryable) rather than
+  a generic (retryable) `TOOL_ERROR`: `adapter.extract_frame()` recognizes ffmpeg-skill's current
+  fail-loudly shape directly (`error.kind == "output"` with a "not written"/"0 bytes" message, via
+  `run_tool()`'s `reclassify` hook), falling back to checking the output file's actual existence —
+  never trusting ffmpeg-skill's own reported status — for a pre-0.11.0 checkout that still claims
+  success. See ADR-5 in docs/decisions.md and `adapter.extract_frame()`'s docstring.
 - `probe.py <path>` prints its document directly (no `{"status": ...}` envelope, unlike `look`); a
   non-zero exit or a document with no `duration` key means the source could not be read at all —
   reported as `INVALID_INPUT` (the source is bad), never `TOOL_ERROR` (which this skill reserves for

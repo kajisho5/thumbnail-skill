@@ -15,7 +15,9 @@ Which ffmpeg-skill tools are used, and for what:
   minimal environment, in its own process group, with a timeout; never a shell, never a
   request-supplied string used as a flag or filter.
 - Every argv value is produced here from validated numbers / resolved absolute paths.
-- Parses the tool's JSON document; a non-zero exit code or {"status": "failed"} becomes TOOL_ERROR."""
+- Parses the tool's JSON document; a non-zero exit code or {"status": "failed"} becomes TOOL_ERROR,
+  unless a caller-supplied `reclassify` recognizes the specific failure shape as something more
+  precise (see `extract_frame()`'s dead-zone-timestamp -> INVALID_TIME_RANGE reclassification)."""
 from __future__ import annotations
 
 import json
@@ -27,7 +29,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .errors import ThumbnailError
 
@@ -206,7 +208,13 @@ class FfmpegSkill:
             raise ThumbnailError("CANCELLED", "interrupted while a tool was running", {"reason": "signal"})
         return proc.returncode, out or "", err or "", round(time.monotonic() - t0, 3)
 
-    def run_tool(self, tool: str, args: Sequence[str], timeout: Optional[float] = None) -> ToolRun:
+    def run_tool(self, tool: str, args: Sequence[str], timeout: Optional[float] = None,
+                 reclassify: Optional[Callable[[Dict[str, Any], Optional[str], str], Optional[ThumbnailError]]] = None) -> ToolRun:
+        """Run one ffmpeg-skill tool. `reclassify`, when given, is consulted BEFORE the generic
+        TOOL_ERROR path on any failure (non-zero exit or {"status": "failed"}): it receives
+        (data, error_message, stderr_tail) and may return a more precise ThumbnailError to raise
+        instead — e.g. extract_frame() turning ffmpeg-skill/look's dead-zone-timestamp output
+        failure into a non-retryable INVALID_TIME_RANGE rather than a retryable TOOL_ERROR."""
         argv = [sys.executable, self.script(tool), *args, "--json"]
         code, out, err, seconds = self._popen(argv, timeout or self.timeout)
         data = _parse_json(out)
@@ -215,6 +223,10 @@ class FfmpegSkill:
         self.runs.append(run)
         if code != 0 or (isinstance(data, dict) and data.get("status") == "failed"):
             msg = (data.get("error") or {}).get("message") if isinstance(data.get("error"), dict) else None
+            if reclassify is not None:
+                replacement = reclassify(data, msg, tail)
+                if replacement is not None:
+                    raise replacement
             raise ThumbnailError("TOOL_ERROR", f"ffmpeg-skill/{tool} failed (exit {code}): {msg or tail or 'no message'}",
                                  {"reason": "tool_failed", "tool": f"ffmpeg-skill/{tool}", "exit_code": code, "stderr_tail": tail,
                                   "error_kind": (data.get("error") or {}).get("kind") if isinstance(data.get("error"), dict) else None})
@@ -236,19 +248,45 @@ class FfmpegSkill:
         """Extract exactly the frame at `timestamp` (no scene detection, no scoring) as a PNG under
         `out_dir`, named deterministically by ffmpeg-skill/look. Returns the resulting file path.
 
-        ffmpeg-skill/look reports `{"status": "completed", "output": ...}` even when the underlying
-        `ffmpeg -ss <timestamp>` decoded zero frames and wrote nothing: this happens for any timestamp
-        landing after the last frame actually present in the stream but at or before the container's
-        reported `duration` (duration commonly extends slightly past the last frame's own PTS — the
-        gap is one frame interval, so on a 10 fps video the last ~0.1s of `duration` has no frame to
-        seek to). That is a fact about the caller's timestamp, not a transient tool failure: retrying
-        the identical request will fail identically forever. So this is reported as `INVALID_TIME_RANGE`
-        (not retryable), never `TOOL_ERROR`, and the file's actual existence is what decides it, not
-        ffmpeg-skill's own claim of success — the same "don't trust a reported success path, check it
-        was actually written" rule executor.py applies to every artifact this skill produces."""
-        run = self.run_tool("look", [video_path, "--at", fmt_seconds(timestamp), "--no-timecode", "-o", str(out_dir / stem)], timeout)
-        outputs = run.data.get("outputs") or ([run.data["output"]] if run.data.get("output") else [])
+        A timestamp landing after the last frame actually present in the stream but at or before the
+        container's reported `duration` (duration commonly extends slightly past the last frame's own
+        PTS — the gap is one frame interval, so on a 10 fps video the last ~0.1s of `duration` has no
+        frame to seek to) makes the underlying `ffmpeg -ss <timestamp>` decode zero frames and write
+        nothing. Since ffmpeg-skill 0.11.0 ("fail loudly", see ffmpeg-skill/CHANGELOG.md), `look`
+        verifies its own output before reporting success, so it now reports this as a hard failure —
+        `{"status": "failed", "error": {"kind": "output", "code": "OUTPUT_INVALID", "message":
+        "output verification failed: ...: not written"}}` — instead of the pre-0.11.0 behaviour of
+        claiming `{"status": "completed"}` while writing nothing.
+
+        Either way this is a fact about the caller's timestamp, not a transient tool failure:
+        retrying the identical request will fail identically forever. So `run_tool()`'s generic,
+        retryable `TOOL_ERROR` is intercepted via its `reclassify` hook and turned into
+        `INVALID_TIME_RANGE` (not retryable) whenever the failure has this exact output-verification
+        shape — never a plain `TOOL_ERROR`, which would tell a calling agent that retrying might help.
+        As a second, defensive layer (for a pre-0.11.0 ffmpeg-skill checkout, or any other case that
+        somehow reports success without writing the file) the output file's actual existence is also
+        checked below rather than trusted from ffmpeg-skill's own status — the same "don't trust a
+        reported success path, check it was actually written" rule executor.py applies to every
+        artifact this skill produces."""
         expected = out_dir / frame_filename(stem, timestamp)
+
+        def _dead_zone_reclassify(data: Dict[str, Any], msg: Optional[str], tail: str) -> Optional[ThumbnailError]:
+            error = data.get("error") if isinstance(data, dict) else None
+            kind = error.get("kind") if isinstance(error, dict) else None
+            text = f"{msg or ''}\n{tail}".lower()
+            if kind != "output" or not ("not written" in text or "0 bytes" in text):
+                return None
+            return ThumbnailError("INVALID_TIME_RANGE",
+                                  f"no frame could be decoded at timestamp {timestamp}s (ffmpeg-skill/look failed output "
+                                  f"verification: {msg or tail}; this timestamp is at or past the last frame actually present "
+                                  "in the source, even though it is within the reported duration) — choose an earlier timestamp",
+                                  {"reason": "no_frame_at_timestamp", "timestamp": timestamp, "expected": str(expected),
+                                   "ffmpeg_skill_error": error},
+                                  retryable=False)
+
+        run = self.run_tool("look", [video_path, "--at", fmt_seconds(timestamp), "--no-timecode", "-o", str(out_dir / stem)],
+                            timeout, reclassify=_dead_zone_reclassify)
+        outputs = run.data.get("outputs") or ([run.data["output"]] if run.data.get("output") else [])
         if outputs:
             candidate = Path(outputs[0])
             if candidate.is_file():

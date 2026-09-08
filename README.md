@@ -135,7 +135,11 @@ before ffmpeg-skill is ever invoked. A timestamp that is technically within the 
 lands after the last frame actually decodable from the source (a container's `duration` commonly
 extends about one frame interval past the last frame's own timestamp, so the very end of any video
 has a small window like this) is also `INVALID_TIME_RANGE`, not retryable: retrying the identical
-timestamp will fail identically every time, so pick an earlier one instead.
+timestamp will fail identically every time, so pick an earlier one instead. ffmpeg-skill itself
+fails loudly on this case (`ffmpeg-skill/look` reports `{"status": "failed", "error": {"kind":
+"output"}}` rather than claiming success with nothing written); this skill recognizes that specific
+failure and reclassifies it as `INVALID_TIME_RANGE` instead of a retryable `TOOL_ERROR` — see ADR-5
+in docs/decisions.md and docs/ffmpeg-skill.md.
 
 ## Output formats
 

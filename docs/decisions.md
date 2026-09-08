@@ -21,15 +21,22 @@
   found and closed during pre-release review (see git history around `security.py`); `PathPolicy`
   now resolves the full target (including a non-existent leaf) and checks containment on the
   resolved result.
-- **ADR-5 ffmpeg-skill/look reporting success with no file written is `INVALID_TIME_RANGE`
-  (non-retryable), never `TOOL_ERROR`.** Measured against ffmpeg-skill 0.9.1: a timestamp landing
-  after the last frame actually decodable from a source but still inside its reported `duration`
-  (a container's `duration` commonly extends about one frame interval past the last frame's own
-  timestamp) makes `look` claim `{"status": "completed"}` while writing nothing. That is a
-  permanent fact about the timestamp — retrying the identical request fails identically forever —
-  so classifying it as a retryable tool failure would be actively misleading to a calling agent.
-  `adapter.extract_frame()` decides this from the output file's actual existence, never from
-  ffmpeg-skill's own claim of success (root cause is in ffmpeg-skill; out of scope here — see
+- **ADR-5 A dead-zone `look` timestamp (past the last decodable frame, still inside reported
+  `duration`) is `INVALID_TIME_RANGE` (non-retryable), never `TOOL_ERROR`.** A timestamp landing
+  after the last frame actually decodable from a source but still inside its reported `duration` (a
+  container's `duration` commonly extends about one frame interval past the last frame's own
+  timestamp) makes the underlying `ffmpeg -ss <timestamp>` decode zero frames and write nothing.
+  Measured against ffmpeg-skill 0.9.1, `look` used to claim `{"status": "completed"}` regardless of
+  this; as of ffmpeg-skill 0.11.0's "fail loudly" pass, `look` instead verifies its own output and
+  reports a hard failure instead — `{"status": "failed", "error": {"kind": "output", "code":
+  "OUTPUT_INVALID", "message": "output verification failed: ...: not written"}}` (current behaviour,
+  measured against ffmpeg-skill 0.12.2). Either shape describes the same permanent fact about the
+  timestamp — retrying the identical request fails identically forever — so classifying it as a
+  retryable tool failure would be actively misleading to a calling agent. `adapter.extract_frame()`
+  reclassifies ffmpeg-skill's current fail-loudly shape directly, via `run_tool()`'s `reclassify`
+  hook (matched on `error.kind == "output"` and a "not written"/"0 bytes" message), and keeps the
+  output file's actual existence as a defensive fallback for the pre-0.11.0 claimed-success shape
+  (root cause of the underlying decode gap is in ffmpeg-skill; out of scope here — see
   docs/ffmpeg-skill.md).
 - **ADR-6 Forbidden-field rejection has its own recursion-depth bound, independent of
   `MAX_METADATA_BYTES`.** `model._reject_forbidden()` walks the raw, not-yet-structurally-validated
@@ -47,6 +54,15 @@
   version range.** Unlike audio-production-skill (which depends on a wide, evolving processing
   surface and therefore pins a version *window*), this skill uses exactly two read-only tools
   (`probe`, `look`) whose flags have been stable since ffmpeg-skill 0.9.1; there is currently no
-  known capability gap to track (see docs/ffmpeg-skill.md). An exact `contract_version` match is
+  known capability *gap* to track (see docs/ffmpeg-skill.md). An exact `contract_version` match is
   simpler and just as safe for this narrow a surface — revisit if this skill ever needs more of
-  ffmpeg-skill's contract.
+  ffmpeg-skill's contract. Caveat found in practice (see ADR-5): a *behavioural* change to `look`
+  landed between ffmpeg-skill 0.9.1 and 0.12.2 (0.11.0's "fail loudly" pass, changing how a
+  dead-zone timestamp is reported) with `contract_version` unchanged at `"1.0"` throughout — the
+  contract's shape is unchanged, but a specific failure's presentation is not, and `info()`'s
+  contract check has no way to see that. There is still no gap in required *capability*, so this
+  doesn't change the ADR's conclusion, but pinning by `contract_version` alone does not guarantee
+  runtime-behavior stability for the exact failure shapes this skill pattern-matches on; ADR-5's
+  reclassification logic is the kind of code that can silently go stale across an ffmpeg-skill
+  upgrade with no contract-check signal, and should be re-checked against ffmpeg-skill's CHANGELOG
+  when bumping the pinned checkout, not just against `contract_version`.
