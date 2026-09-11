@@ -6,16 +6,20 @@
 # entry lands in and the semver level it drives. A PR with none of these labels still gets a
 # changelog entry (under "Other changes") and still counts toward the version bump -- as a
 # patch, via each category's own `semver-increment` default (see release-drafter's schema).
+#
+# 'major' is deliberately absent from `autolabeler` below: it is the only label a human must
+# attach by hand. A text-pattern autolabeler rule for it (matching a title prefix like
+# "breaking:"/"major:", or a body containing the string "BREAKING CHANGE") was considered and
+# rejected -- that string can appear for reasons that have nothing to do with actually shipping
+# a breaking change (e.g. a PR whose *description* discusses a past incident, a bug report, or
+# quoted text), and a false-positive 'major' label reaching this repo's release.yml unreviewed
+# would resolve and tag a real, unintended major version. Autolabeling every other level (which
+# only bumps minor/patch) is comparatively low-stakes and stays automatic.
 
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 
 autolabeler:
-  - label: 'major'
-    title:
-      - '/^(breaking|major)[:!]/i'
-    body:
-      - '/BREAKING CHANGE/'
   - label: 'feature'
     title:
       - '/^(add|feat|feature|implement|new)\b/i'
@@ -49,6 +53,8 @@ categories:
   - title: '💥 Breaking Changes'
     semver-increment: 'major'
     when:
+      # 'major' is never applied by autolabeler (see the note above) -- only a human
+      # attaching it by hand on the PR puts a change here / triggers a major bump.
       labels: ['major']
   - title: '🚀 Features'
     semver-increment: 'minor'
