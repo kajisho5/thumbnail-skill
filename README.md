@@ -249,6 +249,21 @@ upload, a plugin loader, arbitrary shell/ffmpeg/JavaScript/HTML/CSS execution.
 - [docs/testing.md](docs/testing.md): unit, security, integration/real-media tests; fixtures
 - [docs/ffmpeg-skill.md](docs/ffmpeg-skill.md): the ffmpeg-skill contract this skill relies on, tools/flags used, observed behaviour, known gaps
 - [docs/decisions.md](docs/decisions.md): why things are built the way they are (ADR log)
+- [SECURITY.md](SECURITY.md): how to report a vulnerability
+- [CHANGELOG.md](CHANGELOG.md): per-version changes (generated; see Releases below)
+
+## Releases
+
+Versioning, tagging, `CHANGELOG.md`, GitHub Releases and (when a `PYPI_API_TOKEN` repository
+secret is configured) publishing are fully automated by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) on every push to `main`. It
+resolves the next version from the labels ([`major`/`feature`/`fix`/`security`/`documentation`/
+`chore`](.github/release-drafter.yml), applied automatically by
+[`.github/workflows/release-drafter.yml`](.github/workflows/release-drafter.yml)) on PRs merged
+since the last tag; a PR with none of these labels still ships, counted as a patch. Manually
+setting `version` in `pyproject.toml` ahead of the last tag is respected as-is instead of being
+recomputed. There is no separate manual "cut a release" step, and no manually-created tag should
+be pushed -- both would just be overwritten or ignored by the next automated run.
 
 ## Support
 
