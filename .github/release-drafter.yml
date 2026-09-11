@@ -1,0 +1,86 @@
+# Shared configuration for:
+#   - .github/workflows/release-drafter.yml (autolabeler: labels PRs on open/sync)
+#   - .github/workflows/release.yml         (dry-run: resolves the next version + changelog body)
+#
+# Label vocabulary is deliberately small and maps 1:1 to both the changelog section a PR's
+# entry lands in and the semver level it drives. A PR with none of these labels still gets a
+# changelog entry (under "Other changes") and still counts toward the version bump -- as a
+# patch, via each category's own `semver-increment` default (see release-drafter's schema).
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+autolabeler:
+  - label: 'major'
+    title:
+      - '/^(breaking|major)[:!]/i'
+    body:
+      - '/BREAKING CHANGE/'
+  - label: 'feature'
+    title:
+      - '/^(add|feat|feature|implement|new)\b/i'
+    branch:
+      - '/^(feat|feature)\//'
+  - label: 'fix'
+    title:
+      - '/^(fix|bug|bugfix|hotfix|reclassify)\b/i'
+    branch:
+      - '/^fix\//'
+  - label: 'security'
+    title:
+      - '/^(security|sec)\b/i'
+    files:
+      - 'SECURITY.md'
+  - label: 'documentation'
+    title:
+      - '/^docs?\b/i'
+    files:
+      - 'docs/**'
+      - '*.md'
+  - label: 'chore'
+    title:
+      - '/^(chore|refactor|repin|bump|update|clean|maintenance)\b/i'
+    branch:
+      - '/^chore\//'
+    files:
+      - '.github/**'
+
+categories:
+  - title: '💥 Breaking Changes'
+    semver-increment: 'major'
+    when:
+      labels: ['major']
+  - title: '🚀 Features'
+    semver-increment: 'minor'
+    when:
+      labels: ['minor', 'feature']
+  - title: '🔒 Security'
+    semver-increment: 'patch'
+    when:
+      labels: ['security']
+  - title: '🐛 Bug Fixes'
+    semver-increment: 'patch'
+    when:
+      labels: ['fix', 'patch']
+  - title: '📝 Documentation'
+    semver-increment: 'patch'
+    when:
+      labels: ['documentation']
+  - title: '🧰 Maintenance'
+    semver-increment: 'patch'
+    when:
+      labels: ['chore']
+  - title: 'Other changes'
+    # No `when:` -- catches anything not claimed by a category above. No explicit
+    # semver-increment either: release-drafter defaults an omitted one to 'patch',
+    # which is exactly the "no label -> patch" rule this file exists to encode.
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+exclude-labels:
+  - 'skip-changelog'

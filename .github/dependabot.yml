@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "chore"
+
+  # This skill's only runtime dependency (Pillow) and dev/test tooling are declared in
+  # pyproject.toml; there is no requirements.txt / Pipfile / poetry.lock to also track.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "chore"
