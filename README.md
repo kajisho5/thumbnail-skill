@@ -59,7 +59,9 @@ Requirements: Python 3.9+, [Pillow](https://python-pillow.org/) (the rendering e
 Python + libraries it vendors; no ffmpeg dependency for still images or text). A `video_frame`
 asset additionally needs an [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) checkout
 reachable (env var `THUMBNAIL_SKILL_FFMPEG_SKILL_DIR`, or `--ffmpeg-skill`); still-image-only
-documents never need it. `thumbnail doctor --json` reports exactly what is available.
+documents never need it. Any ffmpeg-skill version works: there is no version window, the flags this
+skill uses are detected from the installed checkout (see [docs/ffmpeg-skill.md](docs/ffmpeg-skill.md)).
+`thumbnail doctor --json` reports exactly what is available.
 
 ## Architecture
 

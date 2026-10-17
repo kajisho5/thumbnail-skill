@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import PIL
 
 from . import DOCTOR_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import FfmpegSkill
+from .adapter import FLAGS_USED, FfmpegSkill
 from .errors import ThumbnailError
 from .fonts import FONT_REGISTRY, font_status
 from .model import ELEMENT_TYPES, OUTPUT_FORMATS
@@ -39,6 +39,9 @@ def doctor_report(ffmpeg_skill_dir: Optional[str] = None, workspace: Optional[st
         info = skill.info()
         checks["ffmpeg_skill"] = {"status": "ok" if info.supported else "fail", "directory": str(info.directory), "version": info.version,
                                   "contract_version": info.contract_version, "problems": info.problems,
+                                  "compatibility": "capability detection (no version window): the flags this skill emits must be present",
+                                  "flags_required": {t: list(f) for t, f in FLAGS_USED.items()},
+                                  "detected_via": dict(info.detected_via), "capabilities": dict(info.capabilities),
                                   "role": "video_frame asset decoding only (ffmpeg-skill/probe, ffmpeg-skill/look); still-image and text rendering never need it"}
         problems += ["ffmpeg-skill: " + p for p in info.problems]
     except ThumbnailError as e:

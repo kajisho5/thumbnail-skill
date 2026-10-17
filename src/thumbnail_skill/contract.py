@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import SUPPORTED_CONTRACT_VERSION, TOOLS_USED
+from .adapter import FLAGS_USED, OPTIONAL_FLAGS, SUPPORTED_CONTRACT_VERSION, TOOLS_USED
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import ENGINE_NAME, RESPONSE_SCHEMA_ID
 from .fonts import FONT_REGISTRY, font_ids
@@ -99,7 +99,10 @@ def skill_contract() -> Dict[str, Any]:
                       "stdout": f"exactly one {RESPONSE_SCHEMA_ID} document (through run -) or {{'ok', 'tool', 'result'}}",
                       "shell": False, "arbitrary_executables": False, "arbitrary_filters": False, "network": False, "input_mutation": False, "ai": False,
                       "forbidden_request_fields": sorted(FORBIDDEN_KEYS)},
-        "ffmpeg_skill": {"contract_version": SUPPORTED_CONTRACT_VERSION, "tools_used": list(TOOLS_USED)},
+        "ffmpeg_skill": {"contract_version": SUPPORTED_CONTRACT_VERSION, "tools_used": list(TOOLS_USED),
+                         "compatibility": "any version whose probe/look expose flags_required (detected from its contract or --help; no version window)",
+                         "flags_required": {t: list(f) for t, f in FLAGS_USED.items()},
+                         "flags_optional": {t: list(f) for t, f in OPTIONAL_FLAGS.items()}},
         "schema_versions": {"contract": str(CONTRACT_SCHEMA_VERSION), "request": str(REQUEST_SCHEMA_VERSION), "response": str(RESPONSE_SCHEMA_VERSION), "doctor": str(DOCTOR_SCHEMA_VERSION)},
         "errors": {"codes": list(ERROR_CODES), "exit_codes": dict(EXIT_CODES), "retryable": {c: ERROR_TABLE[c][1] for c in ERROR_CODES}, "success_exit_code": 0},
         "provenance": {"per_output": ["skill", "skill_version", "operation", "engine", "engine_version", "identity", "reused", "assets (sha256, timestamp for video_frame)",
