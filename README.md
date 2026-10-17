@@ -1,4 +1,33 @@
-# thumbnail-skill
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/app-icon-dark.png">
+    <img src="brand/app-icon.png" width="128" alt="thumbnail-skill app icon">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/thumbnail-skill-wordmark-white.svg">
+    <img src="brand/logo/thumbnail-skill-wordmark-black.svg" height="48" alt="thumbnail-skill">
+  </picture>
+</p>
+
+<p align="center"><b>Deterministic thumbnail rendering: a typed ThumbnailDocument in, a validated PNG/JPEG out.</b><br>
+It does not decide what a thumbnail should show; it renders exactly the canvas, image(s) and text the caller specifies, and nothing else.</p>
+
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#cli">CLI</a> ·
+  <a href="#thumbnaildocument">ThumbnailDocument</a> ·
+  <a href="SKILL.md">SKILL.md</a> ·
+  <a href="#documentation">Docs</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/kajisho5/thumbnail-skill/actions/workflows/tests.yml"><img src="https://github.com/kajisho5/thumbnail-skill/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
+</p>
 
 Deterministic thumbnail rendering as an independent, reusable Skill: a typed **ThumbnailDocument**
 in, a validated **PNG/JPEG** artifact out.
