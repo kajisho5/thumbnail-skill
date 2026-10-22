@@ -32,7 +32,8 @@ jobs:
           - os: ubuntu-latest
             python: "3.9"
             ffmpeg_skill: 336e0c4d6311d2407daaa529ad71fee641f59b37
-    runs-on: ${{ matrix.os }}
+    # ubuntu-latest is Ubuntu 26.04, which has no Python 3.9 build; keep 3.9 on the newest image that does
+    runs-on: ${{ matrix.python == '3.9' && startsWith(matrix.os, 'ubuntu') && 'ubuntu-24.04' || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
