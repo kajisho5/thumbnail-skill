@@ -36,7 +36,7 @@ def ffmpeg_skill_dir() -> str:
         str(Path(__file__).resolve().parents[2] / "ffmpeg-skill"),
         str(Path.home() / ".claude" / "skills" / "ffmpeg-skill"),
     ):
-        if candidate and (Path(candidate) / "scripts" / "_contract.py").is_file():
+        if candidate and (Path(candidate) / "scripts" / "look.py").is_file():
             return candidate
     pytest.skip("no ffmpeg-skill checkout found (set THUMBNAIL_SKILL_FFMPEG_SKILL_DIR)")
 

@@ -50,19 +50,18 @@
   raise `RecursionError` from inside its own C-accelerated scanner, before ADR-6's model-level bound
   ever gets a chance to run. Fixing it once in the shared reader — rather than in each subcommand —
   is what makes the fix apply to all four entry points at once.
-- **ADR-8 Track ffmpeg-skill's contract by exact `contract_version` match ("1.0"), not a semantic
-  version range.** Unlike audio-production-skill (which depends on a wide, evolving processing
-  surface and therefore pins a version *window*), this skill uses exactly two read-only tools
-  (`probe`, `look`) whose flags have been stable since ffmpeg-skill 0.9.1; there is currently no
-  known capability *gap* to track (see docs/ffmpeg-skill.md). An exact `contract_version` match is
-  simpler and just as safe for this narrow a surface — revisit if this skill ever needs more of
-  ffmpeg-skill's contract. Caveat found in practice (see ADR-5): a *behavioural* change to `look`
-  landed between ffmpeg-skill 0.9.1 and 0.12.2 (0.11.0's "fail loudly" pass, changing how a
-  dead-zone timestamp is reported) with `contract_version` unchanged at `"1.0"` throughout — the
-  contract's shape is unchanged, but a specific failure's presentation is not, and `info()`'s
-  contract check has no way to see that. There is still no gap in required *capability*, so this
-  doesn't change the ADR's conclusion, but pinning by `contract_version` alone does not guarantee
-  runtime-behavior stability for the exact failure shapes this skill pattern-matches on; ADR-5's
-  reclassification logic is the kind of code that can silently go stale across an ffmpeg-skill
-  upgrade with no contract-check signal, and should be re-checked against ffmpeg-skill's CHANGELOG
-  when bumping the pinned checkout, not just against `contract_version`.
+- **ADR-8 Detect ffmpeg-skill's capabilities; no version window and no exact `contract_version`
+  match.** This skill uses exactly two read-only tools (`probe`, `look`) and four `look` flags, so
+  what it needs is directly checkable: each emitted flag must appear in the located checkout's
+  contract or, failing that, its `--help`. `skill.version` and `contract_version` are reported and
+  feed the cache identity, but are never compared, so a new ffmpeg-skill release (including a
+  major, or a `contract_version` bump that leaves `probe`/`look` alone) is not refused just for its
+  number. Optional behaviour follows the same rule: `--overwrite` is passed only when detected
+  (ffmpeg-skill 2.0 refuses to replace an existing output without it; earlier releases reject
+  it). Superseded the exact `contract_version` "1.0" match, which could not see that 2.0 change:
+  the contract shape was unchanged, yet a re-render with `reuse: false` failed because `look`
+  refused to overwrite the deterministic frame file of the previous run. Caveat that still holds
+  (see ADR-5): a *behavioural* change to `look` (like 0.11.0's "fail loudly" pass) shows up in no
+  contract, which is why CI runs the suite against ffmpeg-skill `main` daily as well as against the
+  oldest tested commit (`336e0c4`, 0.12.2); `tests/test_ffmpeg_skill_compat.py` pins the detection
+  against fake current, old, contract-less and unseen-version layouts.

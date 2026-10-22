@@ -13,6 +13,7 @@ python -m pytest -q
 | `tests/test_unit.py` | `model.py` structural validation (bounds, forbidden fields, enums, id patterns), `fonts.py` resolution, `canonical.py` hashing, the error-code table |
 | `tests/test_security.py` | `PathPolicy`: traversal, prefix-collision (not containment), symlink escape, workspace escape, unsafe file names, NUL bytes; the forbidden-field boundary exercised through `run_tool` |
 | `tests/test_integration.py` | Real Pillow rendering against real image fixtures: still-image thumbnails, PNG and JPEG output, z-order stacking, all four `fit` modes, multiline/Unicode (including Japanese) text, deterministic re-render (byte-identical), reuse (cache hit, cache-corruption recovery), provenance completeness, the `run -` stdin/stdout transport, and — when a real `ffmpeg-skill` checkout and `ffmpeg`/`ffprobe` are available — actual `video_frame` extraction at an exact timestamp and its `INVALID_TIME_RANGE` boundary |
+| `tests/test_ffmpeg_skill_compat.py` | ffmpeg-skill capability detection (ADR-8) through real subprocesses against fake checkouts: current layout (`_contract.py`, `--overwrite` passed), old layout (`contract.py` without `--static`, no `--overwrite`), no contract script (flags from `--help`), unseen `version`/`contract_version` (not refused), a flag missing from the contract but in `--help`, and a genuinely missing flag (reported); plus a repeated `reuse: false` extraction against the real checkout |
 | `tests/test_contract.py` | The contract and doctor report are valid JSON and match the implementation (tool ids, error codes, element types, output formats, font ids); no unimplemented operation (best-frame selection, auto layout, title generation, face detection, click-through prediction) is ever named in the contract |
 
 ## Fixtures
@@ -26,9 +27,10 @@ the same convention `audio-production-skill` and `transcription-skill` use.
 
 ## Real-media video E2E
 
-CI clones a pinned `ffmpeg-skill` checkout into `vendor/ffmpeg-skill` and points
-`THUMBNAIL_SKILL_FFMPEG_SKILL_DIR` at it (see `.github/workflows/tests.yml`), the same pattern
-`audio-production-skill` uses. Locally:
+CI clones `ffmpeg-skill` into `vendor/ffmpeg-skill` and points `THUMBNAIL_SKILL_FFMPEG_SKILL_DIR`
+at it (see `.github/workflows/tests.yml`): `main` on every OS (also on a daily schedule, so a new
+ffmpeg-skill release is exercised without a commit here), and commit `336e0c4` (0.12.2) on one
+Linux job, so the oldest tested layout stays covered. Locally (any ffmpeg-skill version):
 
 ```bash
 git clone https://github.com/kajisho5/ffmpeg-skill vendor/ffmpeg-skill
