@@ -24,7 +24,7 @@ jobs:
       # the very first run would fail to attach a label that has never been created in
       # this repository yet (the GitHub API does not auto-create missing labels).
       - name: Ensure labels exist
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const labels = [
