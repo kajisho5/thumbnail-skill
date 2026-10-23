@@ -1,0 +1,55 @@
+name: PR autolabel
+
+# pull_request_target (not pull_request) so labeling also works on PRs opened from forks: it
+# runs with the base repo's token/permissions rather than the fork's. This is safe here only
+# because we never check out or execute the PR's own code -- the autolabeler action reads PR
+# metadata (title, branch name, changed-file paths) via the GitHub API and does nothing else.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  autolabel:
+    permissions:
+      # issues: write -- label *definitions* (create/list) live under the Issues REST API.
+      # pull-requests: write -- attaching a label to this specific PR.
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      # Idempotent: creates each label only if it doesn't already exist. Without this,
+      # the very first run would fail to attach a label that has never been created in
+      # this repository yet (the GitHub API does not auto-create missing labels).
+      - name: Ensure labels exist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              { name: 'major', color: 'b60205', description: 'Breaking change (major version bump)' },
+              { name: 'feature', color: '0e8a16', description: 'New feature (minor version bump)' },
+              { name: 'fix', color: 'd93f0b', description: 'Bug fix (patch version bump)' },
+              { name: 'security', color: '5319e7', description: 'Security fix (patch version bump)' },
+              { name: 'documentation', color: '0075ca', description: 'Documentation only (patch version bump)' },
+              { name: 'chore', color: 'fef2c0', description: 'Maintenance, no behavior change (patch version bump)' },
+            ];
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label,
+                });
+              } catch (err) {
+                if (err.status !== 422) throw err; // 422: label already exists
+              }
+            }
+
+      - name: Autolabel this pull request
+        uses: release-drafter/release-drafter/autolabeler@v7
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,187 @@
+name: release
+
+# Single job, triggered only by push to main. Deliberately NOT split into a second workflow
+# triggered by tag push: a tag/commit pushed later in this same job using the default
+# GITHUB_TOKEN never triggers another workflow run (GitHub's anti-recursion rule for the
+# default token), so a `push: tags:`-triggered second workflow would simply never fire.
+# Doing version decision, bump, changelog, tag, GitHub Release and (optional) registry
+# publish here, in one job, is what makes the whole pipeline actually run end to end.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'kajisho5/thumbnail-skill'
+    runs-on: ubuntu-latest
+    env:
+      # Job-level env is required to test an optional secret in `if:` conditions below --
+      # GitHub Actions does not allow referencing `secrets.*` directly inside `if:`.
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # dry-run: true means this step only computes outputs (resolved_version, body, ...);
+      # it never creates or updates a GitHub Release itself. We create the real Release
+      # ourselves further down, once we've decided the effective version (see below).
+      - name: Resolve next version and changelog body (dry run)
+        id: drafter
+        uses: release-drafter/release-drafter@v7
+        with:
+          config-name: release-drafter.yml
+          dry-run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide the effective release version
+        id: version
+        env:
+          RESOLVED_VERSION: ${{ steps.drafter.outputs.resolved_version }}
+        run: |
+          set -euo pipefail
+          CURRENT_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)
+          LATEST_TAG_VERSION="${LATEST_TAG#v}"
+
+          # Auto-bump only kicks in when pyproject.toml's version is still exactly the last
+          # released tag: that's the signal that nobody has manually bumped it since. If it
+          # was already bumped by hand (or no tag exists yet at all), that value is respected
+          # verbatim instead of being computed/overwritten.
+          if [ -n "$LATEST_TAG" ] && [ "$CURRENT_VERSION" = "$LATEST_TAG_VERSION" ]; then
+            EFFECTIVE_VERSION="$RESOLVED_VERSION"
+            BUMP_MODE="auto"
+          else
+            EFFECTIVE_VERSION="$CURRENT_VERSION"
+            BUMP_MODE="manual"
+          fi
+
+          SKIP="false"
+          if [ -z "$EFFECTIVE_VERSION" ]; then
+            SKIP="true"
+          elif git rev-parse "v$EFFECTIVE_VERSION" >/dev/null 2>&1; then
+            SKIP="true"
+          fi
+
+          echo "current_version=$CURRENT_VERSION" | tee -a "$GITHUB_OUTPUT"
+          echo "latest_tag=$LATEST_TAG" | tee -a "$GITHUB_OUTPUT"
+          echo "effective_version=$EFFECTIVE_VERSION" | tee -a "$GITHUB_OUTPUT"
+          echo "bump_mode=$BUMP_MODE" | tee -a "$GITHUB_OUTPUT"
+          echo "skip=$SKIP" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Bump pyproject.toml
+        if: steps.version.outputs.skip == 'false' && steps.version.outputs.bump_mode == 'auto'
+        env:
+          EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
+        run: |
+          set -euo pipefail
+          python3 - "$EFFECTIVE_VERSION" <<'PYEOF'
+          import re, sys, pathlib
+          new_version = sys.argv[1]
+          path = pathlib.Path("pyproject.toml")
+          text = path.read_text(encoding="utf-8")
+          updated, n = re.subn(r'(?m)^version = "[^"]*"', f'version = "{new_version}"', text, count=1)
+          if n != 1:
+              raise SystemExit(f"expected exactly one version line in pyproject.toml, replaced {n}")
+          path.write_text(updated, encoding="utf-8")
+          PYEOF
+
+      # RELEASE_BODY comes from merged PR titles (release-drafter's own output) -- untrusted
+      # text. It is passed through `env:` and expanded as a quoted shell variable, never
+      # spliced into the script text via `${{ }}` -- the latter is a known GitHub Actions
+      # script-injection pattern (a PR title containing shell metacharacters would otherwise
+      # be interpreted as part of the script itself instead of as inert string data).
+      - name: Update CHANGELOG.md
+        if: steps.version.outputs.skip == 'false'
+        env:
+          RELEASE_BODY: ${{ steps.drafter.outputs.body }}
+          EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
+        run: |
+          set -euo pipefail
+          python3 <<'PYEOF'
+          import os, pathlib, datetime
+          version = os.environ["EFFECTIVE_VERSION"]
+          body = os.environ["RELEASE_BODY"]
+          date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+          path = pathlib.Path("CHANGELOG.md")
+          rest = ""
+          if path.exists():
+              text = path.read_text(encoding="utf-8")
+              if text.startswith("# Changelog"):
+                  parts = text.split("\n\n", 1)
+                  rest = parts[1] if len(parts) > 1 else ""
+              else:
+                  rest = text
+          new_entry = f"## v{version} ({date})\n\n{body}\n"
+          new_text = "# Changelog\n\n" + new_entry + ("\n" + rest if rest.strip() else "\n")
+          path.write_text(new_text, encoding="utf-8")
+          PYEOF
+
+      - name: Commit version bump and changelog, tag, push
+        if: steps.version.outputs.skip == 'false'
+        env:
+          EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
+          BUMP_MODE: ${{ steps.version.outputs.bump_mode }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if [ "$BUMP_MODE" = "auto" ]; then
+            git add pyproject.toml
+          fi
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+          else
+            git commit -m "release: v${EFFECTIVE_VERSION}"
+          fi
+          git tag "v${EFFECTIVE_VERSION}"
+          # Pushed with the default GITHUB_TOKEN persisted by actions/checkout: per GitHub's
+          # anti-recursion rule this will not trigger this workflow (or any other) again.
+          git push origin HEAD:main
+          git push origin "v${EFFECTIVE_VERSION}"
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.skip == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
+          RELEASE_BODY: ${{ steps.drafter.outputs.body }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RELEASE_BODY" > "$RUNNER_TEMP/release_notes.md"
+          gh release create "v${EFFECTIVE_VERSION}" \
+            --title "v${EFFECTIVE_VERSION}" \
+            --notes-file "$RUNNER_TEMP/release_notes.md" \
+            --target main
+
+      - name: Build distribution
+        if: steps.version.outputs.skip == 'false' && env.PYPI_API_TOKEN != ''
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade build
+          python3 -m build
+
+      # Skipped (not failed) when no PyPI token is configured -- tag and Release above still
+      # go through either way. Add a PYPI_API_TOKEN repository secret to enable this step.
+      - name: Publish to PyPI
+        if: steps.version.outputs.skip == 'false' && env.PYPI_API_TOKEN != ''
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ env.PYPI_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade twine
+          python3 -m twine upload dist/*
