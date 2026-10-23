@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.1 (2026-10-23)
+
+## What's Changed
+
+## 🧰 Maintenance
+
+* ci: bump GitHub Actions (checkout v7, setup-python v7, github-script v9) (#14) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.0...v0.1.1
+
+
 ## v0.1.0 (2026-10-23)
 
 ## What's Changed
