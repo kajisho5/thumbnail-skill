@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.4 (2026-10-30)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Platform size presets + post-render output check (roadmap step 2) (#17) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.3...v0.1.4
+
+
 ## v0.1.3 (2026-10-30)
 
 ## What's Changed
