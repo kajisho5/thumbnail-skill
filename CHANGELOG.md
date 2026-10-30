@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.2 (2026-10-30)
+
+## What's Changed
+
+## 📝 Documentation
+
+* docs: add ECOSYSTEM_ROADMAP.md (gaps, wiring, next steps) (#15) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.1...v0.1.2
+
+
 ## v0.1.1 (2026-10-23)
 
 ## What's Changed
