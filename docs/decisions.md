@@ -133,3 +133,14 @@
   declaration). The only contract change is the new top-level `platform_presets`, which none of those
   covers, so the pinned contract reports no drift and no breaking drift. The response gains `preset`
   (and `provenance.preset`) only when a request names one, which the agent never does today.
+- **ADR-10 The Pillow floor depends on the Python version, because the release that clears every
+  advisory does not install on all supported Pythons.** `Pillow>=10.0` allowed releases with 50+
+  published advisories (OSV, 2026-10-30; several CRITICAL heap overflows in image decoders, which
+  this skill runs on caller-supplied images). Pillow 13.0.0 is the first release with none, but it
+  requires Python 3.11, and this skill supports and tests 3.9. Dropping 3.9 to raise the floor
+  would be a breaking change made for a dependency, so the floor is split with environment markers:
+  Python 3.11+ gets `Pillow>=13.0.0`; Python 3.10 gets `>=12.3.0` (the last 3.10 release, which
+  still carries the advisories fixed in 13.0.0); Python 3.9 gets `>=11.3.0` (the last 3.9 release,
+  which also carries those fixed in 12.2.0/12.3.0). Pip already picks the newest compatible
+  release, so this only raises the minimum; anyone who needs the fully patched Pillow runs Python
+  3.11+.

@@ -55,7 +55,8 @@ pip install "thumbnail-skill @ git+https://github.com/kajisho5/thumbnail-skill"
 pip install -e .
 ```
 
-Requirements: Python 3.9+, [Pillow](https://python-pillow.org/) (the rendering engine — pure
+Requirements: Python 3.9+, [Pillow](https://python-pillow.org/) (13.0.0+ on Python 3.11+, the newest
+release that still installs on 3.9/3.10 below that, see ADR-10 in docs/decisions.md; the rendering engine — pure
 Python + libraries it vendors; no ffmpeg dependency for still images or text). A `video_frame`
 asset additionally needs an [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) checkout
 reachable (env var `THUMBNAIL_SKILL_FFMPEG_SKILL_DIR`, or `--ffmpeg-skill`); still-image-only
