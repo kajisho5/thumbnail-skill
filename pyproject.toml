@@ -11,7 +11,13 @@ license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [{name = "kajisho5"}]
 keywords = ["thumbnail", "image", "rendering", "skill", "ffmpeg"]
-dependencies = ["Pillow>=10.0"]
+# Pillow floor per Python (ADR-10): 13.0.0 clears every published advisory but needs Python 3.11;
+# 3.10 and 3.9 get the newest Pillow that still supports them.
+dependencies = [
+    "Pillow>=13.0.0; python_version >= '3.11'",
+    "Pillow>=12.3.0; python_version == '3.10'",
+    "Pillow>=11.3.0; python_version < '3.10'",
+]
 
 [project.scripts]
 thumbnail = "thumbnail_skill.cli:main"
