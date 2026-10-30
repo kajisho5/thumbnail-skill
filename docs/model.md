@@ -7,7 +7,7 @@ a file, a font or ffmpeg-skill.
 
 | Field | Type | Bounds | Notes |
 |---|---|---|---|
-| `width`, `height` | int | 16..7680 | the rendered output is always exactly this size; never hard-coded |
+| `width`, `height` | int | 16..7680 | the rendered output is always exactly this size; never hard-coded. Optional (both or neither) when `output.preset` is set: the preset's size is then used |
 | `background` | `#RRGGBB` \| `#RRGGBBAA` | — | default `#000000`; fills any area no image element covers |
 
 ## ThumbnailAsset
@@ -66,6 +66,25 @@ timestamp (best frame, a moment after a cut, a specific slide) is the caller's j
 | `format` | `png` \| `jpeg` | only formats actually implemented are ever advertised |
 | `overwrite` | bool | default false |
 | `jpeg_quality` | 1..100 | only accepted when `format: jpeg` |
+| `preset` | one of the platform presets below \| null | default none; see "Platform presets" |
+
+## Platform presets
+
+`output.preset` names a delivery target (ADR-9 in docs/decisions.md has every figure's source, and
+which are unverified). The preset supplies `canvas.width`/`height` when the document omits both;
+explicit `width` and `height` win (giving only one of them is `INVALID_REQUEST`). After the render,
+the written file itself is checked against the preset — dimensions, aspect ratio, format, byte size —
+before it is cached or placed; any violation is `VALIDATION_ERROR`, `details.reason:
+"preset_limit_exceeded"`, with every violation listed. Byte limits are decimal (1 MB = 1,000,000 bytes).
+
+| `preset` | default size | aspect ratio | other dimension limits | formats | max bytes |
+|---|---|---|---|---|---|
+| `youtube` | 1280x720 | 16:9 | width >= 640 | png, jpeg | 2,000,000 |
+| `youtube-shorts` | 1080x1920 | 9:16 | height >= 640 | png, jpeg | 50,000,000 |
+| `tiktok` | 1080x1920 | 9:16 | at most 1080x1920 | jpeg | 2,000,000 |
+| `instagram-reels` | 1080x1920 | 9:16 | width >= 720 | png, jpeg | 2,000,000 |
+| `instagram-feed` | 1080x1080 | 4:5 .. 1.91:1 | width >= 320 | png, jpeg | 2,000,000 |
+| `x` | 1600x900 | 16:9 | — | png, jpeg | 5,000,000 |
 
 ## Options
 

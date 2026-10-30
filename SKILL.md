@@ -26,7 +26,10 @@ Rules for a calling agent:
    set `overwrite: true` deliberately. Restrict inputs with `options.allowed_input_roots` when the
    caller's own inputs come from an untrusted or shared location.
 5. Read `output`, `sha256`, `width`/`height`, `reused` and `provenance` from the response; the exit
-   code is 0 only when `ok` is true. A `video_frame` asset needs ffmpeg-skill reachable (env var
+   code is 0 only when `ok` is true. For a platform target, set `output.preset` (`youtube`,
+   `youtube-shorts`, `tiktok`, `instagram-reels`, `instagram-feed`, `x`; limits in `thumbnail skill
+   --json` -> `platform_presets`): it supplies the canvas size unless you give both `width` and
+   `height`, and an output over the preset's limits fails `VALIDATION_ERROR` (`preset_limit_exceeded`). A `video_frame` asset needs ffmpeg-skill reachable (env var
    `THUMBNAIL_SKILL_FFMPEG_SKILL_DIR` or `--ffmpeg-skill`); a still-image-only document never needs it.
 
 See README.md for the ThumbnailDocument schema, element/font/output tables, error codes, security

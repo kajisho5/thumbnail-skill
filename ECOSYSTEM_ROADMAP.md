@@ -23,7 +23,7 @@ Agent uses extract_frame and render with one frame + one text only. Delegates to
 
 - [ ] **1. Single-source the version + contract_version/dependencies**
   - Done when: contract version == pyproject
-- [ ] **2. Platform size presets + output check** — YouTube 1280x720 etc.
+- [x] **2. Platform size presets + output check** — YouTube 1280x720 etc. ([#17](https://github.com/kajisho5/thumbnail-skill/pull/17))
   - Done when: test per preset
 - [ ] **3. Optional AI background provider** — FLUX.2 klein 4B behind doctor detection; provenance records engine and licence
   - Done when: absent model = doctor DEGRADED and a refusal, not a crash

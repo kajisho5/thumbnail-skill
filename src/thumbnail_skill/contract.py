@@ -11,7 +11,7 @@ from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import ENGINE_NAME, RESPONSE_SCHEMA_ID
 from .fonts import FONT_REGISTRY, font_ids
 from .model import (ASSET_KINDS, ELEMENT_TYPES, FIT_MODES, FORBIDDEN_KEYS, H_ALIGN, ID_RE, MAX_ASSETS, MAX_CANVAS, MAX_ELEMENTS, MAX_TEXT_LENGTH, MAX_TEXT_LINES,
-                    MIN_CANVAS, OUTPUT_FORMATS, REQUEST_SCHEMA_ID, ROTATIONS, V_ALIGN)
+                    MIN_CANVAS, OUTPUT_FORMATS, PLATFORM_PRESETS, REQUEST_SCHEMA_ID, ROTATIONS, V_ALIGN, _ratio_text)
 
 CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
 
@@ -71,6 +71,26 @@ def element_specs() -> Dict[str, Any]:
     }
 
 
+def platform_presets() -> Dict[str, Any]:
+    """`output.preset`, declared beside `output_formats` and derived from the same table the check runs on
+    (model.PLATFORM_PRESETS). A new top-level key: nothing a consumer already pins changes shape."""
+    return {
+        "field": "output.preset", "tools": ["thumbnail/render", "thumbnail/extract_frame"],
+        "precedence": "explicit document.canvas width+height win over the preset's size; with a preset both may be omitted (the preset's size is used); "
+                      "giving only one of the two is INVALID_REQUEST. The preset's limits are checked either way.",
+        "check": "after rendering, the written artifact's real dimensions (min/max width/height and aspect-ratio range), format and byte size are checked "
+                 "against the preset before it is cached or placed at the output path; a cache hit is checked the same way",
+        "failure": {"code": "VALIDATION_ERROR", "reason": "preset_limit_exceeded", "details": ["preset", "violations [{check, limit?, expected, got}]"]},
+        "response": "on success, `preset` {name, platform, checked, ok} in the response and `preset` (name) in provenance; absent without a preset",
+        "bytes": "max_bytes in bytes, decimal megabytes (1 MB = 1,000,000 bytes)",
+        "presets": {name: {"platform": p["platform"], "surface": p["surface"], "width": p["width"], "height": p["height"],
+                           "aspect_ratio": {"min": _ratio_text(p["aspect_ratio"]["min"]), "max": _ratio_text(p["aspect_ratio"]["max"])},
+                           "min_width": p["min_width"], "min_height": p["min_height"], "max_width": p["max_width"], "max_height": p["max_height"],
+                           "formats": list(p["formats"]), "max_bytes": p["max_bytes"], "unverified": list(p["unverified"]), "sources": list(p["sources"])}
+                    for name, p in PLATFORM_PRESETS.items()},
+    }
+
+
 def skill_contract() -> Dict[str, Any]:
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
@@ -90,6 +110,7 @@ def skill_contract() -> Dict[str, Any]:
                                 "video_frame": "explicit timestamp only; this skill never searches for a 'best frame'"},
                      "elements": {"types": list(ELEMENT_TYPES), "max_elements": MAX_ELEMENTS, "stacking": "z_index, ties broken by document order", **element_specs()}},
         "output_formats": {f: {"extensions": list(s["extensions"]), "lossless": s["lossless"]} for f, s in OUTPUT_FORMATS.items()},
+        "platform_presets": platform_presets(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
                   "registry": {fid: {"display_name": e["display_name"], "role": e["role"]} for fid, e in FONT_REGISTRY.items()}},
@@ -113,4 +134,4 @@ def skill_contract() -> Dict[str, Any]:
     }
 
 
-__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "skill_contract", "element_specs", "capability_provides"]
+__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "skill_contract", "element_specs", "capability_provides", "platform_presets"]

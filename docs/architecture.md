@@ -34,6 +34,8 @@ params (JSON)
   -> renderer.render_document              canvas fill -> elements sorted by (z_index, document order) -> Pillow paste/crop/resize/draw
   -> finalize_for_save                     PNG keeps alpha; JPEG is flattened onto the canvas's own background colour first
   -> Executor._validate_output             re-open, check format/dimensions, sha256
+  -> model.check_preset                    when output.preset is set: real dimensions / aspect ratio / format / byte size vs the preset
+                                             (ADR-9); a violation discards the file (VALIDATION_ERROR), nothing is cached or placed
   -> Executor._store_cache + _place_output write the cache entry, then copy into the final output path
   -> response document                     output, format, width, height, size, sha256, reused, provenance
 ```
