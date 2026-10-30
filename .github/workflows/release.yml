@@ -39,7 +39,7 @@ jobs:
       # ourselves further down, once we've decided the effective version (see below).
       - name: Resolve next version and changelog body (dry run)
         id: drafter
-        uses: release-drafter/release-drafter@v7
+        uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
         with:
           config-name: release-drafter.yml
           dry-run: true
