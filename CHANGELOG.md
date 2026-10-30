@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.3 (2026-10-30)
+
+## What's Changed
+
+## 🐛 Bug Fixes
+
+* fix: report the release version, single-sourced from pyproject.toml (#16) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.2...v0.1.3
+
+
 ## v0.1.2 (2026-10-30)
 
 ## What's Changed
