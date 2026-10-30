@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.5 (2026-10-30)
+
+## What's Changed
+
+## 📝 Documentation
+
+* deps: raise the Pillow floor per Python version (supply-chain audit) (#18) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* deps: raise the Pillow floor per Python version (supply-chain audit) (#18) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.4...v0.1.5
+
+
 ## v0.1.4 (2026-10-30)
 
 ## What's Changed
