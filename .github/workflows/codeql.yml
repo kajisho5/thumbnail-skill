@@ -9,6 +9,9 @@ on:
     # Sundays at 03:17 UTC (an arbitrary off-peak minute, not top-of-hour).
     - cron: '17 3 * * 0'
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
