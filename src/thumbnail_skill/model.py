@@ -53,6 +53,49 @@ OUTPUT_FORMATS: Dict[str, Dict[str, Any]] = {
     "jpeg": {"extensions": (".jpg", ".jpeg"), "pillow_format": "JPEG", "lossless": False},
 }
 
+# Named platform presets (`output.preset`), ADR-9 in docs/decisions.md. Every figure is taken from the
+# platform's own documentation (URLs in `sources`); a field listed in `unverified` had no official
+# figure for that exact surface and holds a deliberately conservative value instead. A preset supplies
+# the canvas size when the document omits it (explicit canvas width/height win), and after the render
+# the written artifact itself is checked against `formats`, `max_bytes`, the aspect-ratio range and the
+# min/max dimensions -- never the request. Aspect ratios are (width, height) integer pairs, compared by
+# cross-multiplication (no float tolerance); `min` is the narrowest accepted shape, `max` the widest.
+MB = 1_000_000   # decimal megabytes: the smaller reading of a platform's "MB", so a passing file passes either way
+PLATFORM_PRESETS: Dict[str, Dict[str, Any]] = {
+    "youtube": {
+        "platform": "YouTube", "surface": "video custom thumbnail", "width": 1280, "height": 720,
+        "aspect_ratio": {"min": (16, 9), "max": (16, 9)}, "min_width": 640, "min_height": None, "max_width": None, "max_height": None,
+        "formats": ("png", "jpeg"), "max_bytes": 2 * MB, "unverified": (),
+        "sources": ("https://support.google.com/youtube/answer/72431",)},
+    "youtube-shorts": {
+        "platform": "YouTube", "surface": "Shorts custom thumbnail", "width": 1080, "height": 1920,
+        "aspect_ratio": {"min": (9, 16), "max": (9, 16)}, "min_width": None, "min_height": 640, "max_width": None, "max_height": None,
+        "formats": ("png", "jpeg"), "max_bytes": 50 * MB, "unverified": (),
+        "sources": ("https://support.google.com/youtube/answer/72431",)},
+    "tiktok": {
+        "platform": "TikTok", "surface": "video cover (vertical)", "width": 1080, "height": 1920,
+        "aspect_ratio": {"min": (9, 16), "max": (9, 16)}, "min_width": None, "min_height": None, "max_width": 1080, "max_height": 1920,
+        "formats": ("jpeg",), "max_bytes": 2 * MB,
+        "unverified": ("width", "height", "aspect_ratio", "max_width", "max_height", "formats", "max_bytes"),
+        "sources": ("https://developers.tiktok.com/doc/content-posting-api-media-transfer-guide",
+                    "https://www.tiktok.com/creator-academy/article/video-covers-thumbnails")},
+    "instagram-reels": {
+        "platform": "Instagram", "surface": "Reels cover (vertical)", "width": 1080, "height": 1920,
+        "aspect_ratio": {"min": (9, 16), "max": (9, 16)}, "min_width": 720, "min_height": None, "max_width": None, "max_height": None,
+        "formats": ("png", "jpeg"), "max_bytes": 2 * MB, "unverified": ("width", "height", "formats", "max_bytes"),
+        "sources": ("https://help.instagram.com/1038071743007909",)},
+    "instagram-feed": {
+        "platform": "Instagram", "surface": "feed photo (square)", "width": 1080, "height": 1080,
+        "aspect_ratio": {"min": (4, 5), "max": (191, 100)}, "min_width": 320, "min_height": None, "max_width": None, "max_height": None,
+        "formats": ("png", "jpeg"), "max_bytes": 2 * MB, "unverified": ("max_bytes",),
+        "sources": ("https://help.instagram.com/1631821640426723", "https://www.facebook.com/business/ads-guide/update/image/instagram-feed")},
+    "x": {
+        "platform": "X (Twitter)", "surface": "post image (landscape)", "width": 1600, "height": 900,
+        "aspect_ratio": {"min": (16, 9), "max": (16, 9)}, "min_width": None, "min_height": None, "max_width": None, "max_height": None,
+        "formats": ("png", "jpeg"), "max_bytes": 5 * MB, "unverified": ("width", "height", "aspect_ratio"),
+        "sources": ("https://docs.x.com/x-api/media/quickstart/best-practices",)},
+}
+
 
 # ---------------------------------------------------------------- dataclasses
 @dataclass
@@ -222,9 +265,10 @@ class OutputSpec:
     format: str
     overwrite: bool = False
     jpeg_quality: int = 90
+    preset: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"path": self.path, "format": self.format, "overwrite": self.overwrite, "jpeg_quality": self.jpeg_quality}
+        return {"path": self.path, "format": self.format, "overwrite": self.overwrite, "jpeg_quality": self.jpeg_quality, "preset": self.preset}
 
 
 @dataclass
@@ -405,8 +449,16 @@ def _text_content(value: Any, where: str) -> TextContent:
     return TextContent(text, font_id, font_size, color, position, align, line_spacing, opacity, background, stroke, shadow)
 
 
-def parse_canvas(value: Any, where: str = "canvas") -> ThumbnailCanvas:
-    d = _obj(value, where, ("width", "height", "background"), ("width", "height"))
+def parse_canvas(value: Any, where: str = "canvas", default_size: Optional[Tuple[int, int]] = None) -> ThumbnailCanvas:
+    """`default_size` is the size an `output.preset` supplies. Precedence: an explicit `width` and
+    `height` always win over it; both are required when there is no preset; giving only one of the two
+    is refused rather than mixed with the preset's other dimension."""
+    d = _obj(value, where, ("width", "height", "background"), () if default_size else ("width", "height"))
+    if default_size and ("width" in d) != ("height" in d):
+        raise ThumbnailError("INVALID_REQUEST", f"{where}: give both 'width' and 'height' (they override the preset's size) or neither (the preset's size is used)",
+                             {"field": where, "reason": "partial_canvas_size"})
+    if "width" not in d:
+        d = {**d, "width": default_size[0], "height": default_size[1]}   # type: ignore[index]
     width = int(_number(d["width"], f"{where}.width", MIN_CANVAS, MAX_CANVAS, integer=True))
     height = int(_number(d["height"], f"{where}.height", MIN_CANVAS, MAX_CANVAS, integer=True))
     background = _color(d.get("background", "#000000"), f"{where}.background")
@@ -468,11 +520,11 @@ def _metadata(value: Any, where: str) -> Dict[str, Any]:
     return value
 
 
-def parse_document(value: Any, where: str = "document") -> ThumbnailDocument:
+def parse_document(value: Any, where: str = "document", default_size: Optional[Tuple[int, int]] = None) -> ThumbnailDocument:
     _reject_forbidden(value, where)   # covers free-form `metadata` too, which has no field allowlist of its own
     d = _obj(value, where, ("document_id", "canvas", "assets", "elements", "metadata"), ("document_id", "canvas", "elements"))
     document_id = _id(d["document_id"], f"{where}.document_id")
-    canvas = parse_canvas(d["canvas"], f"{where}.canvas")
+    canvas = parse_canvas(d["canvas"], f"{where}.canvas", default_size)
 
     assets_raw = d.get("assets", [])
     if not isinstance(assets_raw, list):
@@ -506,7 +558,7 @@ def parse_document(value: Any, where: str = "document") -> ThumbnailDocument:
 
 
 def parse_output(value: Any, where: str = "output") -> OutputSpec:
-    d = _obj(value, where, ("path", "format", "overwrite", "jpeg_quality"), ("path", "format"))
+    d = _obj(value, where, ("path", "format", "overwrite", "jpeg_quality", "preset"), ("path", "format"))
     if not isinstance(d["path"], str) or not d["path"]:
         raise ThumbnailError("INVALID_REQUEST", f"{where}.path must be a non-empty string", {"field": f"{where}.path"})
     fmt = d["format"]
@@ -518,7 +570,47 @@ def parse_output(value: Any, where: str = "output") -> OutputSpec:
     if "jpeg_quality" in d and fmt != "jpeg":
         raise ThumbnailError("INVALID_REQUEST", f"{where}.jpeg_quality is only accepted when format is 'jpeg'", {"field": f"{where}.jpeg_quality"})
     jpeg_quality = int(_number(d.get("jpeg_quality", 90), f"{where}.jpeg_quality", 1, 100, integer=True))
-    return OutputSpec(d["path"], fmt, overwrite, jpeg_quality)
+    preset = _enum(d["preset"], f"{where}.preset", tuple(PLATFORM_PRESETS)) if d.get("preset") is not None else None
+    return OutputSpec(d["path"], fmt, overwrite, jpeg_quality, preset)
+
+
+def _ratio_text(r: Tuple[int, int]) -> str:
+    return f"{r[0]}:{r[1]}" if r != (191, 100) else "1.91:1"
+
+
+def preset_violations(name: str, width: int, height: int, fmt: str, size: int) -> List[Dict[str, Any]]:
+    """Every way a written artifact (its real dimensions, format and byte size) falls outside a platform
+    preset's limits; empty when it fits. Pure: the caller measures the file."""
+    p = PLATFORM_PRESETS[name]
+    out: List[Dict[str, Any]] = []
+    for key, got in (("min_width", width), ("min_height", height)):
+        if p[key] is not None and got < p[key]:
+            out.append({"check": "dimensions", "limit": key, "expected": p[key], "got": got})
+    for key, got in (("max_width", width), ("max_height", height)):
+        if p[key] is not None and got > p[key]:
+            out.append({"check": "dimensions", "limit": key, "expected": p[key], "got": got})
+    (nw, nh), (ww, wh) = p["aspect_ratio"]["min"], p["aspect_ratio"]["max"]
+    if width * nh < nw * height or width * wh > ww * height:   # narrower than `min` or wider than `max`
+        want = _ratio_text((nw, nh)) if (nw, nh) == (ww, wh) else f"{_ratio_text((nw, nh))}..{_ratio_text((ww, wh))}"
+        out.append({"check": "aspect_ratio", "expected": want, "got": f"{width}x{height}"})
+    if fmt not in p["formats"]:
+        out.append({"check": "format", "expected": list(p["formats"]), "got": fmt})
+    if size > p["max_bytes"]:
+        out.append({"check": "file_size", "limit": "max_bytes", "expected": p["max_bytes"], "got": size})
+    return out
+
+
+def check_preset(name: Optional[str], width: int, height: int, fmt: str, size: int) -> Optional[Dict[str, Any]]:
+    """None without a preset; the preset's verdict when it passes; VALIDATION_ERROR (reason
+    `preset_limit_exceeded`, every violation listed) when the artifact exceeds any of its limits."""
+    if name is None:
+        return None
+    violations = preset_violations(name, width, height, fmt, size)
+    if violations:
+        summary = "; ".join(f"{v['check']} ({v.get('limit', 'expected')} {v['expected']}, got {v['got']})" for v in violations)
+        raise ThumbnailError("VALIDATION_ERROR", f"output exceeds the {name!r} platform preset: {summary}",
+                             {"reason": "preset_limit_exceeded", "preset": name, "violations": violations})
+    return {"name": name, "platform": PLATFORM_PRESETS[name]["platform"], "checked": ["dimensions", "aspect_ratio", "format", "file_size"], "ok": True}
 
 
 def parse_options(value: Any, where: str = "options") -> Dict[str, Any]:
@@ -552,8 +644,9 @@ def parse_render_request(doc: Any) -> RenderRequest:
     d = _obj(doc, "params", ("schema", "document", "output", "options"), ("document",))
     if "schema" in d and d["schema"] != REQUEST_SCHEMA_ID:
         raise ThumbnailError("INVALID_REQUEST", f"unsupported request schema {d['schema']!r}; expected {REQUEST_SCHEMA_ID!r}", {"field": "schema"})
-    document = parse_document(d["document"])
-    output = parse_output(d["output"]) if "output" in d else None
+    output = parse_output(d["output"]) if "output" in d else None   # first: its preset may supply the canvas size
+    preset = PLATFORM_PRESETS[output.preset] if output is not None and output.preset else None
+    document = parse_document(d["document"], default_size=(preset["width"], preset["height"]) if preset else None)
     options = parse_options(d.get("options"))
     if output is None:
         return RenderRequest(document, OutputSpec("", "png", False, 90), options)
@@ -561,7 +654,8 @@ def parse_render_request(doc: Any) -> RenderRequest:
 
 
 __all__ = ["REQUEST_SCHEMA_ID", "ID_RE", "COLOR_RE", "FORBIDDEN_KEYS", "MIN_CANVAS", "MAX_CANVAS", "MAX_ASSETS", "MAX_ELEMENTS",
-           "MAX_TIMESTAMP", "ASSET_KINDS", "ELEMENT_TYPES", "FIT_MODES", "ROTATIONS", "H_ALIGN", "V_ALIGN", "OUTPUT_FORMATS",
+           "MAX_TIMESTAMP", "ASSET_KINDS", "ELEMENT_TYPES", "FIT_MODES", "ROTATIONS", "H_ALIGN", "V_ALIGN", "OUTPUT_FORMATS", "PLATFORM_PRESETS",
            "Position", "Size", "Crop", "ImageContent", "TextAlign", "TextBackground", "TextStroke", "TextShadow", "TextContent",
            "ThumbnailElement", "ThumbnailAsset", "ThumbnailCanvas", "ThumbnailDocument", "OutputSpec", "RenderRequest",
-           "parse_canvas", "parse_asset", "parse_element", "parse_document", "parse_output", "parse_options", "parse_render_request"]
+           "parse_canvas", "parse_asset", "parse_element", "parse_document", "parse_output", "parse_options", "parse_render_request",
+           "preset_violations", "check_preset"]

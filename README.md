@@ -125,7 +125,7 @@ human line goes to stdout and errors to stderr.
 
 | Concept | Fields | Notes |
 |---|---|---|
-| `ThumbnailCanvas` | `width`, `height` (16..7680), `background` (`#RRGGBB`/`#RRGGBBAA`) | the output is always exactly this size; no hard-coded 1280x720 |
+| `ThumbnailCanvas` | `width`, `height` (16..7680), `background` (`#RRGGBB`/`#RRGGBBAA`) | the output is always exactly this size; no hard-coded 1280x720. With `output.preset`, omit both to use the preset's size; explicit values win |
 | `ThumbnailAsset` | `asset_id`, `kind` (`image` \| `video_frame`), `path`, `timestamp` (video_frame only) | `timestamp` is the caller's decision; this skill fetches exactly that frame, never a "better" one |
 | `ThumbnailElement` (image) | `asset_id`, `position {x,y}`, `size {width,height}`, `fit` (`cover`\|`contain`\|`fill`\|`none`), `crop {x,y,width,height}`, `opacity`, `rotation` (`0`\|`90`\|`180`\|`270`) | source-pixel crop is applied before fit/scale |
 | `ThumbnailElement` (text) | `text`, `font_id`, `font_size` (6..400), `color`, `position`, `align {horizontal,vertical}`, `line_spacing`, `opacity`, `background {color,padding}`, `stroke {color,width}`, `shadow {color,offset_x,offset_y}` | line breaks are literal `\n` in `text`; there is no automatic word-wrap or layout — that is a caller decision |
@@ -179,6 +179,23 @@ own background colour before encoding, since JPEG has no alpha channel). Only fo
 implemented are advertised by `thumbnail skill --json` and `thumbnail doctor --json`. Every output
 is re-opened and checked before being reported successful: real image, declared format, exact
 canvas dimensions, non-empty, sha256 recorded.
+
+## Platform presets
+
+`output.preset` names a platform's thumbnail/cover target: `youtube` (1280x720), `youtube-shorts`,
+`tiktok`, `instagram-reels` (1080x1920), `instagram-feed` (1080x1080), `x` (1600x900). A preset
+supplies the canvas size when the document gives none (explicit `canvas.width`/`height` win), and
+the written file is then checked against the preset's dimensions, aspect ratio, format and byte size
+before it is cached or placed; anything over a limit fails `VALIDATION_ERROR` (`details.reason:
+"preset_limit_exceeded"`, every violation listed) and no output is written.
+
+```json
+"output": {"path": "ep42_youtube.jpg", "format": "jpeg", "preset": "youtube"}
+```
+
+Limits come from each platform's own documentation, cited per preset in `thumbnail skill --json`
+(`platform_presets`) and in ADR-9 ([docs/decisions.md](docs/decisions.md)); figures no official page
+states are marked `unverified` and set conservatively. Full table: [docs/model.md](docs/model.md).
 
 ## Security
 
@@ -234,7 +251,7 @@ ffmpeg-skill's own `content_equivalent` convention for environment-dependent enc
 | `DEPENDENCY_ERROR` | duplicate id or another structural inconsistency |
 | `TOOL_ERROR` | ffmpeg-skill failed, timed out, or is unavailable |
 | `OUTPUT_ERROR` | output could not be written, is empty, collides with an input, or already exists |
-| `VALIDATION_ERROR` | output written but failed post-render validation |
+| `VALIDATION_ERROR` | output written but failed post-render validation, including an `output.preset` limit (`preset_limit_exceeded`) |
 | `CANCELLED` | interrupted by signal |
 | `INTERNAL_ERROR` | a bug in this skill |
 
@@ -243,7 +260,8 @@ ffmpeg-skill's own `content_equivalent` convention for environment-dependent enc
 Every successful `render`/`extract_frame` response carries `provenance`: skill id/version, the
 rendering engine and its version, the render/extraction identity hash, `reused`, every asset's
 resolved path + sha256 (+ timestamp and source duration for `video_frame`), every font actually
-used (`font_id`, path, sha256), and the output's own sha256.
+used (`font_id`, path, sha256), the output's own sha256, and — when `output.preset` was set — the
+preset's name.
 
 ## Cross-repository Capability ids
 

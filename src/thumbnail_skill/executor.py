@@ -26,7 +26,7 @@ from .adapter import FfmpegSkill
 from .canonical import sha256_file, stable_hash
 from .errors import ThumbnailError
 from .fonts import ResolvedFont, resolve_font
-from .model import OUTPUT_FORMATS, OutputSpec, RenderRequest, ThumbnailAsset, ThumbnailDocument, parse_render_request
+from .model import OUTPUT_FORMATS, OutputSpec, RenderRequest, ThumbnailAsset, ThumbnailDocument, check_preset, parse_render_request
 from .renderer import render_document
 from .security import PathPolicy
 
@@ -246,10 +246,11 @@ class Executor:
         manifest = self._try_reuse(identity, out.format) if reuse else None
         if manifest is not None:
             cache_file, _ = self._cache_paths(identity, out.format)
-            final = self._place_output(cache_file, out)
-            reused = True
             width, height = document.canvas.width, document.canvas.height
             out_sha256, out_size = manifest["sha256"], manifest["size"]
+            preset_result = check_preset(out.preset, width, height, out.format, out_size)   # before anything is placed
+            final = self._place_output(cache_file, out)
+            reused = True
         else:
             images: Dict[str, "Image.Image"] = {}
             frame_provenance: Dict[str, Any] = {}
@@ -284,6 +285,7 @@ class Executor:
                         pass
 
             width, height, out_sha256, out_size = self._validate_output(tmp_out, document.canvas.width, document.canvas.height, out.format)
+            preset_result = self._check_preset_or_discard(tmp_out, out, width, height, out_size)
             self._store_cache(identity, out.format, tmp_out, {"width": width, "height": height, "format": out.format,
                                                                "assets": asset_identities, "fonts": {fid: rf.to_dict() for fid, rf in fonts_used.items()},
                                                                "frames": frame_provenance})
@@ -297,8 +299,29 @@ class Executor:
                       "document_id": document.document_id, "identity": identity, "reused": reused,
                       "assets": [{k: v for k, v in ident.items()} for ident in asset_identities.values()],
                       "fonts": [rf.to_dict() for rf in fonts_used.values()], "output_hash": f"sha256:{out_sha256}"}
-        return {"output": str(final), "format": out.format, "width": width, "height": height, "size": out_size,
+        body = {"output": str(final), "format": out.format, "width": width, "height": height, "size": out_size,
                 "sha256": f"sha256:{out_sha256}", "reused": reused, "operations": ["thumbnail/render"], "provenance": provenance}
+        return self._with_preset(body, preset_result)
+
+    @staticmethod
+    def _with_preset(body: Dict[str, Any], preset_result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Additive: `preset` (response and provenance) appears only when the request named one."""
+        if preset_result is not None:
+            body["preset"] = preset_result
+            body["provenance"]["preset"] = preset_result["name"]
+        return body
+
+    def _check_preset_or_discard(self, tmp_out: Path, out: OutputSpec, width: int, height: int, size: int) -> Optional[Dict[str, Any]]:
+        """ADR-9: the written artifact against `output.preset`, before it is cached or placed; a file
+        that exceeds the preset is removed and never reaches the output path."""
+        try:
+            return check_preset(out.preset, width, height, out.format, size)
+        except ThumbnailError:
+            try:
+                tmp_out.unlink()
+            except OSError:
+                pass
+            raise
 
     def _validate_output(self, path: Path, expected_w: int, expected_h: int, fmt: str) -> Tuple[int, int, str, int]:
         if not path.is_file():
@@ -367,8 +390,9 @@ class Executor:
         manifest = self._try_reuse(identity, out.format) if reuse else None
         if manifest is not None:
             cache_file, _ = self._cache_paths(identity, out.format)
-            final = self._place_output(cache_file, out)
             width, height, out_sha256, out_size = manifest["width"], manifest["height"], manifest["sha256"], manifest["size"]
+            preset_result = check_preset(out.preset, width, height, out.format, out_size)
+            final = self._place_output(cache_file, out)
             reused = True
         else:
             tmp_dir = self.policy.resolve_work_dir(TMP_DIR_NAME)
@@ -385,6 +409,7 @@ class Executor:
             width, height = img.width, img.height
             img.close()
             _, _, out_sha256, out_size = self._validate_output(tmp_out, width, height, out.format)
+            preset_result = self._check_preset_or_discard(tmp_out, out, width, height, out_size)
             self._store_cache(identity, out.format, tmp_out, {"width": width, "height": height, "format": out.format, "source_sha256": source_sha, "timestamp": float(ts)})
             final = self._place_output(tmp_out, out)
             try:
@@ -396,8 +421,9 @@ class Executor:
         provenance = {"skill": SKILL_ID, "skill_version": VERSION, "operation": "thumbnail/extract_frame", "engine": "ffmpeg-skill/look",
                       "identity": identity, "reused": reused, "source": {"path": str(resolved), "sha256": f"sha256:{source_sha}", "timestamp": float(ts), "duration": duration},
                       "output_hash": f"sha256:{out_sha256}"}
-        return {"output": str(final), "format": out.format, "width": width, "height": height, "size": out_size,
+        body = {"output": str(final), "format": out.format, "width": width, "height": height, "size": out_size,
                 "sha256": f"sha256:{out_sha256}", "reused": reused, "operations": ["thumbnail/extract_frame"], "provenance": provenance}
+        return self._with_preset(body, preset_result)
 
 
 TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame")

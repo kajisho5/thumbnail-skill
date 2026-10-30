@@ -65,3 +65,71 @@
   contract, which is why CI runs the suite against ffmpeg-skill `main` daily as well as against the
   oldest tested commit (`336e0c4`, 0.12.2); `tests/test_ffmpeg_skill_compat.py` pins the detection
   against fake current, old, contract-less and unseen-version layouts.
+- **ADR-9 Platform size presets are a named `output.preset`, checked against the written artifact
+  after the render; every figure cites the platform's own documentation or says "unverified".**
+  `model.PLATFORM_PRESETS` is the one table: the request parser, the post-render check and the
+  contract's top-level `platform_presets` (beside `output_formats`, declared the same way) all read it.
+  *Where the field lives:* on `output`, not `canvas`, because a preset is a delivery target (format
+  and byte-size limits as well as a shape), and because `output`'s fields are not part of the
+  contract's `document` section that consumers pin (see "Consumers" below). *Precedence:* the preset
+  supplies `canvas.width`/`height` when the document omits both; explicit `width` and `height` win;
+  giving only one of the two with a preset is `INVALID_REQUEST` (`partial_canvas_size`) rather than
+  a silent mix. Explicit sizes are still held to the preset's limits, so `youtube` accepts 1920x1080
+  but refuses 1000x1000. *The check:* after `_validate_output` (real image, declared format, exact
+  canvas size), the file's real width/height (min/max per preset, aspect-ratio range by integer
+  cross-multiplication, no float tolerance), format and byte size are compared with the preset;
+  any violation is `VALIDATION_ERROR` with `details.reason: "preset_limit_exceeded"`, `preset`, and
+  every `violations[] {check, limit?, expected, got}` at once. It runs before the artifact is cached
+  or placed, so a refused render leaves no output and no cache entry; a cache hit (presets are not
+  part of the render identity, since they do not change a pixel) is checked the same way, as is
+  `thumbnail/extract_frame`. Checking the artifact rather than the request costs one render on a
+  request whose format or shape was already wrong, in exchange for one check that also covers file
+  size (unknowable before encoding) and the reuse path. Byte limits use decimal megabytes
+  (1 MB = 1,000,000 bytes), the smaller reading, so a file that passes is under the limit either way.
+  Researched 2026-10-30; when an official page gives a range or several limits, the narrowest is
+  used. A figure no official page states for that exact surface is listed in the preset's
+  `unverified` and set conservatively: an unverified byte limit is 2,000,000 (the smallest official
+  thumbnail limit found, YouTube's mobile upload limit).
+  - `youtube` 1280x720, exactly 16:9, width >= 640, PNG/JPEG, <= 2 MB. Verified,
+    <https://support.google.com/youtube/answer/72431> (fetched verbatim): "Have a resolution of 3840
+    x 2160 pixels for videos ..., with a minimum width of 640 pixels for videos", "image formats
+    such as JPG or PNG", "Mobile: 2 MB for video thumbnails ... Desktop: 50MB", "aspect ratio of
+    16:9". 1280x720 is kept as the default size (the roadmap's figure and within the page's limits);
+    the larger recommended 3840x2160 is reachable with explicit width/height. The upload device is
+    unknown here, so the smaller (mobile) limit applies.
+  - `youtube-shorts` 1080x1920, exactly 9:16, height >= 640, PNG/JPEG, <= 50 MB. Verified, same
+    page: "2160 x 3840 for Shorts ... a minimum height of 640 pixels for Shorts", "For Shorts, try to
+    upload a thumbnail with an aspect ratio of 9:16", and custom Shorts thumbnails "are currently only
+    available to add in YouTube Studio on a computer", so only the desktop limit (50MB) applies.
+  - `tiktok` 1080x1920, exactly 9:16, at most 1080x1920, JPEG only, <= 2 MB. **Unverified** for the
+    cover itself: TikTok's Creator Academy article on covers
+    (<https://www.tiktok.com/creator-academy/article/video-covers-thumbnails>) is rendered by
+    JavaScript and could not be read directly; only a search index's summary of it (9:16,
+    1080x1920) was seen. The one official image spec found is for photo posts, not covers
+    (<https://developers.tiktok.com/doc/content-posting-api-media-transfer-guide>, fetched verbatim:
+    formats "WebP, JPEG", "Maximum 1080p", "Maximum of 20MB for each image"); hence JPEG only (PNG is
+    not listed), the 1080p ceiling, and the conservative 2 MB instead of 20MB.
+  - `instagram-reels` 1080x1920, exactly 9:16, width >= 720, PNG/JPEG, <= 2 MB. Partly verified:
+    <https://help.instagram.com/1038071743007909> (JavaScript-rendered; its indexed text, not a
+    verbatim fetch) says reels may be "between 1.91:1 and 9:16" with a "minimum resolution of 720
+    pixels"; the preset takes the vertical end exactly. No official cover-image size, format or byte
+    limit was found: those are **unverified** (Meta's Reels ads guide lists video files only).
+  - `instagram-feed` 1080x1080, aspect 4:5..1.91:1, width >= 320, PNG/JPEG, <= 2 MB.
+    <https://help.instagram.com/1631821640426723> (indexed text): photos keep their resolution at a
+    width of 320 to 1080 pixels and an aspect ratio between 1.91:1 and 3:4 (an older copy says 4:5;
+    the narrower 4:5 is used). Byte limit **unverified** for organic posts; the only official figure
+    is Meta's ads guide (<https://www.facebook.com/business/ads-guide/update/image/instagram-feed>:
+    "JPG or PNG", "Maximum File Size: 30MB", "Minimum Width: 500 pixels"), which is for ads, so 2 MB
+    is used.
+  - `x` 1600x900, exactly 16:9, PNG/JPEG, <= 5 MB. Format and size verified,
+    <https://docs.x.com/x-api/media/quickstart/best-practices> (fetched verbatim): "Supported image
+    media types: JPG, PNG, GIF, WEBP", "Image size: <= 5 MB". Size and aspect **unverified**: no
+    official page names 1600x900; X's ads specs (help.x.com, refused automated fetches) are reported
+    to recommend 1920x1080 for 16:9. 1600x900 is the requested size and is 16:9.
+
+  *Consumers:* video-production-agent pins this contract (`contract_0.1.3.json`) and gates on
+  `FATAL_DRIFT_KEYS` (`schema`, `skill_id`, `kind`, `execution`, `document`, `output_formats`, `fonts`,
+  `rendering`, `schema_versions`, `errors`, `provenance`, `deterministic`, plus each tool's
+  declaration). The only contract change is the new top-level `platform_presets`, which none of those
+  covers, so the pinned contract reports no drift and no breaking drift. The response gains `preset`
+  (and `provenance.preset`) only when a request names one, which the agent never does today.
