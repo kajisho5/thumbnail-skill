@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.7 (2026-10-31)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Optional AI background provider: thumbnail/generate_background with FLUX.2 [klein] 4B behind doctor detection (roadmap step 3) (#20) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.6...v0.1.7
+
+
 ## v0.1.6 (2026-10-31)
 
 ## What's Changed
