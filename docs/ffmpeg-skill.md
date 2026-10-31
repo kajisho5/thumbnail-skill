@@ -5,7 +5,9 @@ It works with any ffmpeg-skill version that offers the flags it emits: compatibi
 **detected**, not decided by a version window or an exact `contract_version` match (ADR-8). It has
 been run against ffmpeg-skill 0.12.2 (commit `336e0c4`, the oldest checkout CI still tests) and
 2.10.3 (main at the time of writing), and CI runs the suite against ffmpeg-skill `main` on every
-push, pull request and once a day, plus once against `336e0c4`. It never calls `ffmpeg`/`ffprobe`
+push, pull request and once a day, plus once against `336e0c4`, once against `v3.0.0` (on Python
+3.10, its floor) and, on Python 3.9, against `v2.24.1` (ffmpeg-skill 3.x needs Python 3.10+ and
+FFmpeg 6.1+; ADR-13 in decisions.md). It never calls `ffmpeg`/`ffprobe`
 itself — `adapter.py` is the only place a subprocess is started, and it only ever invokes
 ffmpeg-skill's own typed CLI.
 
