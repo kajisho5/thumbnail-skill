@@ -108,6 +108,8 @@ class Executor:
                 return self._envelope(True, "ok", self._render(params))
             if tool == "thumbnail/extract_frame":
                 return self._envelope(True, "ok", self._extract_frame(params))
+            if tool == "thumbnail/generate_background":
+                return self._envelope(True, "ok", self._generate_background(params))
             raise ThumbnailError("UNSUPPORTED_OPERATION", f"unknown tool {tool!r}", {"tool": tool, "supported": TOOLS})
         except ThumbnailError as e:
             return self._envelope(False, "cancelled" if e.code == "CANCELLED" else "error", {"error": e.to_dict()})
@@ -425,7 +427,57 @@ class Executor:
                 "sha256": f"sha256:{out_sha256}", "reused": reused, "operations": ["thumbnail/extract_frame"], "provenance": provenance}
         return self._with_preset(body, preset_result)
 
+    # ---- thumbnail/generate_background (optional AI provider, ADR-12)
+    def _generate_background(self, params: Any) -> Dict[str, Any]:
+        """One background image from a named provider, a caller-written prompt and an explicit seed. Never part of
+        render: the result is an ordinary image file the caller may then use as an `image` asset. Not cached and
+        declared non-deterministic: the same seed on another device or library version may give other pixels."""
+        if not isinstance(params, dict):
+            raise ThumbnailError("INVALID_REQUEST", "params must be a JSON object")
+        from .background import get_provider, parse_background, unavailable
+        from .canonical import stable_hash as _stable_hash
+        from .model import _obj, _reject_forbidden, parse_options, parse_output
+        _reject_forbidden(params, "params")
+        d = _obj(params, "params", ("background", "output", "options"), ("background", "output"))
+        bg = parse_background(d["background"])
+        out = parse_output(d["output"])
+        options = parse_options(d.get("options"))
+        self._apply_policy_overrides(options)
+        target = self.policy.resolve_write_path(out.path, "output")
+        if target.exists() and not out.overwrite:
+            raise ThumbnailError("OUTPUT_ERROR", f"output already exists (set overwrite: true to replace it): {target}", {"reason": "exists", "path": str(target)})
 
-TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame")
+        provider = get_provider(bg["provider"])
+        status = provider.status()
+        if status["status"] != "available":
+            raise unavailable(provider.provider_id, status)
+        img = provider.generate(bg["prompt"], bg["width"], bg["height"], bg["seed"], bg["steps"], bg["guidance_scale"])
+        if not isinstance(img, Image.Image) or img.size != (bg["width"], bg["height"]):
+            got = list(img.size) if isinstance(img, Image.Image) else type(img).__name__
+            raise ThumbnailError("VALIDATION_ERROR", f"provider {provider.provider_id!r} did not return a {bg['width']}x{bg['height']} image (got {got})",
+                                 {"reason": "provider_output_invalid", "provider": provider.provider_id, "got": got})
+        final_img = img.convert("RGB")
+        tmp_out = self._tmp_path(out.format)
+        save_kwargs = {"quality": out.jpeg_quality, "optimize": True} if out.format == "jpeg" else {}
+        final_img.save(tmp_out, format=OUTPUT_FORMATS[out.format]["pillow_format"], **save_kwargs)
+        width, height, out_sha256, out_size = self._validate_output(tmp_out, bg["width"], bg["height"], out.format)
+        preset_result = self._check_preset_or_discard(tmp_out, out, width, height, out_size)
+        final = self._place_output(tmp_out, out)
+        try:
+            tmp_out.unlink()
+        except OSError:
+            pass
+        provenance = {"skill": SKILL_ID, "skill_version": VERSION, "operation": "thumbnail/generate_background", "generated": True,
+                      "provider": provider.provider_id, "engine": provider.engine, "engine_version": provider.engine_version(),
+                      "model": provider.model, "licence": provider.licence, "licence_url": provider.licence_url, "model_card": provider.model_card,
+                      "prompt": bg["prompt"], "prompt_sha256": f"sha256:{_stable_hash(bg['prompt'])}", "seed": bg["seed"], "steps": bg["steps"],
+                      "guidance_scale": bg["guidance_scale"], "width": width, "height": height, "reused": False, "deterministic": False,
+                      "output_hash": f"sha256:{out_sha256}"}
+        body = {"output": str(final), "format": out.format, "width": width, "height": height, "size": out_size,
+                "sha256": f"sha256:{out_sha256}", "reused": False, "operations": ["thumbnail/generate_background"], "provenance": provenance}
+        return self._with_preset(body, preset_result)
+
+
+TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/generate_background")
 
 __all__ = ["Executor", "RESPONSE_SCHEMA_ID", "TOOLS", "ENGINE_NAME"]

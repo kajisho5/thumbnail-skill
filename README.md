@@ -64,6 +64,10 @@ documents never need it. Any ffmpeg-skill version works: there is no version win
 skill uses are detected from the installed checkout (see [docs/ffmpeg-skill.md](docs/ffmpeg-skill.md)).
 `thumbnail doctor --json` reports exactly what is available.
 
+Optional: `pip install -e '.[flux2]'` (torch, diffusers>=0.37.0, transformers>=4.51.0) plus a local
+snapshot of FLUX.2 [klein] 4B enables `thumbnail/generate_background` ([below](#optional-ai-background)).
+Without it nothing changes.
+
 ## Architecture
 
 | layer | owns | does not do |
@@ -86,6 +90,8 @@ thumbnail doctor --json                        # fonts, ffmpeg-skill, path polic
 thumbnail validate request.json --json         # structural check only; no file system, no font, no ffmpeg-skill
 thumbnail render request.json --json           # canvas + assets + elements -> PNG/JPEG
 thumbnail extract-frame request.json --json    # one video timestamp -> one frame, nothing else
+thumbnail generate-background request.json --json
+                                                # optional: one AI background image from a configured provider (ADR-12)
 thumbnail skill --json                         # the machine-readable contract (source of truth)
 echo '{"tool":"thumbnail/render","params":{...}}' | thumbnail run -
                                                 # process-boundary transport: one JSON request in, one JSON response out
@@ -256,6 +262,39 @@ ffmpeg-skill's own `content_equivalent` convention for environment-dependent enc
 | `CANCELLED` | interrupted by signal |
 | `INTERNAL_ERROR` | a bug in this skill |
 
+## Optional AI background
+
+`thumbnail/generate_background` (ADR-12 in [docs/decisions.md](docs/decisions.md); roadmap step 3)
+generates **one background image** from a caller-written prompt and an explicit seed with a named,
+locally installed provider, and writes it as a validated PNG/JPEG with provenance. It never decides
+what to show and never composes: the result is an ordinary `image` asset for `thumbnail/render`, so
+composition stays deterministic and the ThumbnailDocument model is unchanged.
+
+```json
+{"tool": "thumbnail/generate_background", "params": {
+  "background": {"provider": "flux2-klein-4b", "prompt": "a calm studio backdrop, soft light",
+                 "width": 1280, "height": 720, "seed": 7, "steps": 4, "guidance_scale": 1.0},
+  "output": {"path": "bg.png", "format": "png", "preset": "youtube"}}}
+```
+
+| Provider | Engine | Licence | Turned on by | Needs |
+|---|---|---|---|---|
+| `flux2-klein-4b` | FLUX.2 [klein] 4B ([model card](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)) | Apache-2.0 | `THUMBNAIL_FLUX2_KLEIN_4B_DIR` = a local snapshot of `black-forest-labs/FLUX.2-klein-4B` | `pip install -e '.[flux2]'`; about 13 GB of VRAM (model card) |
+
+- **Without a provider nothing changes.** `render`, `extract_frame` and `validate` never touch it;
+  `doctor` reports `not_configured` without changing its status; `generate_background` is refused
+  with `TOOL_ERROR` (`details.reason: provider_unavailable`, not retryable), never a crash.
+- **Configured but unable to run** (no `model_index.json`, torch/diffusers/transformers missing, a
+  diffusers without `Flux2KleinPipeline`): `doctor` is `degraded` with a warning naming what is
+  missing, and `generate_background` is refused the same way.
+- **No download, no network.** Weights load with `local_files_only=True`; obtaining the snapshot is
+  the operator's step. The 9B [klein] variant (non-commercial licence) is not offered.
+- **Not deterministic.** The same seed on another GPU or library version may give other pixels, so
+  the tool is declared `deterministic: false` and is never cached. Width and height are 256..2048,
+  multiples of 16; `steps` defaults to 4 and `guidance_scale` to 1.0 (the model card's example).
+- **Provenance** records `generated: true`, provider, engine and its version, model, licence and
+  licence URL, model card, prompt (and its sha256), seed, steps, guidance scale and the output hash.
+
 ## Provenance
 
 Every successful `render`/`extract_frame` response carries `provenance`: skill id/version, the
@@ -267,7 +306,8 @@ preset's name.
 ## Cross-repository Capability ids
 
 `skill --json` (alias `contract --json`) also publishes `provides`: `render` as Capability
-id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame` — the identifiers a
+id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame`, the optional
+`generate_background` as `thumbnail.generate_background` — the identifiers a
 registry (see `kajisho5/AI-video-production-OS`) can resolve to this Skill without
 hardcoding it. `validate` has no Capability id — it produces no output artifact, only a
 structural check. Additive; no behavior change to any tool.
@@ -285,7 +325,8 @@ structural check. Additive; no behavior change to any tool.
 | **qc-skill** | Inspect a finished artifact | does the delivered file meet spec? |
 | **video-production-agent** | What should be done, with what content? (inference, decisions, planning) | "use frame at 13:32.5", "title reads X", "put the logo top-right" |
 
-thumbnail-skill deliberately contains none of: AI reasoning, automatic frame selection, face/object
+Apart from the optional, caller-prompted background generator above (ADR-12), thumbnail-skill
+deliberately contains none of: AI reasoning, automatic frame selection, face/object
 detection, OCR, semantic analysis, automatic title/layout/design generation, click-through
 prediction, A/B testing, publish decisions, video editing, color grading, subtitle rendering, cloud
 upload, a plugin loader, arbitrary shell/ffmpeg/JavaScript/HTML/CSS execution.

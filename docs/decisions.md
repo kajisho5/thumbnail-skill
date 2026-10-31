@@ -183,3 +183,60 @@
   `ffmpeg_skill`, `schema_versions`, `errors`, `provenance`, `deterministic`). Neither new key is in
   that list, and `check_contract()` reads neither, so this is no drift and no breaking drift. Its
   version gate is `("0.1.",)`, so this ships as a patch release, never with a `feature` label.
+- **ADR-12 The optional AI background provider is its own tool, `thumbnail/generate_background`, behind a provider
+  interface; without a configured provider nothing changes.** (`ECOSYSTEM_ROADMAP.md` step 3; the OS's ADR-012 names
+  FLUX.2 [klein] 4B, Apache-2.0, as this skill's engine for generated backgrounds, and excludes the non-commercial 9B.)
+  *Shape:* a new tool, not a new asset kind. A `generated` asset inside the ThumbnailDocument would make `render`
+  non-deterministic and change the `document` section, which video-production-agent pins as fatal drift. As its own
+  tool, the generator writes an ordinary image file that `render` takes as an `image` asset, so composition stays
+  deterministic, the cache identity stays content-based, and the document model is unchanged.
+  *Provider interface:* `background.py` holds `BackgroundProvider` (id, engine, model, licence, licence URL, model card,
+  the environment variable that turns it on, `status()`, `generate()`), and a registry `PROVIDERS` with one entry,
+  `flux2-klein-4b`. A further provider is one class and one registry line; the request names the provider explicitly,
+  so nothing is chosen for the caller.
+  *Sources (read 2026-10-31):* the model card <https://huggingface.co/black-forest-labs/FLUX.2-klein-4B> ("This model
+  is licensed under the ... Apache 2.0"; "fits in ~13GB VRAM"; the diffusers example `Flux2KleinPipeline.from_pretrained(...,
+  torch_dtype=torch.bfloat16)`, `guidance_scale=1.0`, `num_inference_steps=4`, `generator=torch.Generator(device).manual_seed(0)`;
+  the 9B models are under "a non-commercial license"), and diffusers' Flux2 page
+  <https://huggingface.co/docs/diffusers/main/en/api/pipelines/flux2> (`Flux2KleinPipeline.__call__(prompt, height, width,
+  num_inference_steps, guidance_scale, generator, ...)`; the pipeline file first appears in diffusers v0.37.0, hence the
+  `flux2` extra's `diffusers>=0.37.0`; its text encoder is transformers' Qwen3, hence `transformers>=4.51.0`).
+  *Turning it on:* `THUMBNAIL_FLUX2_KLEIN_4B_DIR` names a local snapshot of `black-forest-labs/FLUX.2-klein-4B`, and the
+  `flux2` extra installs torch, diffusers and transformers. Weights load with `local_files_only=True`: this skill never
+  downloads a model and opens no connection, so `execution.network` stays false. Obtaining the snapshot is the
+  operator's step, done once.
+  *Three states, as the roadmap's "absent model = doctor DEGRADED and a refusal, not a crash" asks, without changing
+  anything for a machine that never asked for the provider:*
+  - **not configured** (the variable unset): `doctor` reports `not_configured` and keeps its status;
+    `generate_background` is refused.
+  - **configured but unable to run** (no `model_index.json`, a missing package): `doctor` is `degraded`, with a warning
+    naming what is missing; `generate_background` is refused.
+  - **available**: it runs.
+  Detection only looks: `find_spec` and a file check, with no import of torch and no model load. A refusal is
+  `TOOL_ERROR`, `details.reason: provider_unavailable`, not retryable (the same family as an unavailable ffmpeg-skill,
+  and no new code, so the pinned `errors` section is unchanged). A model or runtime failure is `TOOL_ERROR`
+  `provider_failed`; an image of the wrong size from a provider is `VALIDATION_ERROR` `provider_output_invalid`. Each
+  of these leaves no output.
+  *Request:* `background {provider, prompt, width, height, seed, steps?, guidance_scale?}`, plus `output` and
+  `options`, as on the other tools; forbidden fields are rejected at any depth. The prompt is the caller's: 1..2000
+  characters, with no control characters but `\n`. Width and height are 256..2048 and multiples of 16 (the model works
+  on 16-pixel latents; a non-multiple is refused rather than resized). The seed is required (0..2^32-1). `steps`
+  (1..50) and `guidance_scale` (0..20) default to the model card's 4 and 1.0. `output.preset` is checked as on the
+  other tools (ADR-9).
+  *Not deterministic, not cached:* the same seed can give other pixels on another GPU, dtype or library version
+  (bfloat16 on CUDA, float32 on CPU), so the tool says `deterministic: false` and a result is never reused. Provenance
+  instead records everything needed to ask again: `generated: true`, provider, engine and its version (diffusers'), model,
+  licence and licence URL, model card, the prompt and its sha256, seed, steps, guidance scale, size and the output hash.
+  FLUX.2 [klein] 4B adds no watermark or credit obligation (Apache-2.0), so none is recorded.
+  *Contract:* the new tool (`ai: true`, `optional: true`, `deterministic: false`), its Capability id
+  `thumbnail.generate_background` (EXPERIMENTAL) in `provides`, and a new top-level `background_providers` section. The
+  core sections keep describing the deterministic render path exactly as before: `execution` (including `ai: false`),
+  `deterministic: true`, `document`, `errors`. Changing `execution.ai` would make video-production-agent refuse the
+  whole contract (its `check_contract` requires `ai` false), and it would misdescribe `render`/`extract_frame`, which
+  never use a model. `background_providers.core_tools_use_ai: false` says the same thing explicitly.
+  *Consumers:* in video-production-agent's thumbnail adapter, a new tool and a new top-level key are additive. None of
+  its `FATAL_DRIFT_KEYS` changes, so there is no breaking drift. `provides` gained an entry, so its pinned
+  `contract_0.1.6.json` should be re-pinned (on the agent side) before it uses the tool. Whether the agent's
+  `execution.ai` gate should also cover per-tool `ai` flags is the agent's decision.
+  *Tests:* `tests/test_background.py` runs the real provider code against fake `torch`/`diffusers`/`transformers`
+  modules, so no model, GPU or download is involved.
