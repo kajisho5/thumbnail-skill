@@ -240,3 +240,15 @@
   `execution.ai` gate should also cover per-tool `ai` flags is the agent's decision.
   *Tests:* `tests/test_background.py` runs the real provider code against fake `torch`/`diffusers`/`transformers`
   modules, so no model, GPU or download is involved.
+- **ADR-13 ffmpeg-skill 3.0.0 needs no code change; CI pins Python 3.9 to the last 2.x tag.**
+  Checked 2026-10-31 against ffmpeg-skill v3.0.0 (CHANGELOG "3.0.0", `docs/contract.md` "What 3.0
+  changed", `contract --json` `removed`). 3.0.0 changed `cut.py`'s defaults, added `probe`'s
+  `timecode` and raised the floor to Python 3.10 and FFmpeg 6.1; `probe` (positional input) and
+  `look` (`--at`, `--no-timecode`, `-o`, `--overwrite`, `--json`) are unchanged, and ADR-8's detection
+  finds every flag on it. The suite passes against it (202 tests, Python 3.11, FFmpeg 6.1.1). The
+  `dependencies` entry stays `>=1.0` of `contract_version` (3.0.0 reports `2.0`), a lower bound only.
+  ffmpeg-skill's scripts run under this skill's interpreter, so on Python 3.9 a 3.x checkout is the
+  environment's problem, reported by ffmpeg-skill's own doctor; this skill keeps `requires-python
+  >=3.9` for use with ffmpeg-skill 2.x. CI therefore runs Python 3.9 against `v2.24.1` (it ran
+  against `main`, which is 3.x now), adds `v3.0.0` on Python 3.10, and keeps `main` on 3.11
+  (Linux, macOS, Windows) and `336e0c4` on 3.9.

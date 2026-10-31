@@ -17,12 +17,17 @@ jobs:
       fail-fast: false
       matrix:
         # ffmpeg-skill compatibility is detected at runtime (no version window), so the suite runs
-        # against ffmpeg-skill main everywhere, and once against the oldest commit it was verified
-        # against (0.12.2: no --overwrite, pre-2.0 layout) so both ends stay covered.
+        # against ffmpeg-skill main everywhere, once against the v3.0.0 tag, and once against the
+        # oldest commit it was verified against (0.12.2: no --overwrite, pre-2.0 layout) so both
+        # ends stay covered. ffmpeg-skill 3.0.0 dropped Python 3.9, so Python 3.9 runs against the
+        # last 2.x tag (v2.24.1) instead of main (ADR-13).
         include:
           - os: ubuntu-latest
             python: "3.9"
-            ffmpeg_skill: main
+            ffmpeg_skill: v2.24.1
+          - os: ubuntu-latest
+            python: "3.10"
+            ffmpeg_skill: v3.0.0
           - os: ubuntu-latest
             python: "3.11"
             ffmpeg_skill: main
