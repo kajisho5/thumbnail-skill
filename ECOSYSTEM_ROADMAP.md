@@ -13,7 +13,7 @@ pyproject 0.1.1 but VERSION 0.1.0. Python + Pillow. validate, render (ThumbnailD
 
 | Owned job | Status | Note |
 |---|---|---|
-| サムネイル | partial | deterministic composition done; the AI background engine named in ecosystem.json (FLUX.2 [klein] 4B, ADR-012) is not implemented |
+| サムネイル | done | deterministic composition; the AI background engine named in ecosystem.json (FLUX.2 [klein] 4B, ADR-012) as the optional `thumbnail/generate_background` ([#20](https://github.com/kajisho5/thumbnail-skill/pull/20)) |
 
 ## Wiring
 
@@ -25,7 +25,7 @@ Agent uses extract_frame and render with one frame + one text only. Delegates to
   - Done when: contract version == pyproject
 - [x] **2. Platform size presets + output check** — YouTube 1280x720 etc. ([#17](https://github.com/kajisho5/thumbnail-skill/pull/17))
   - Done when: test per preset
-- [ ] **3. Optional AI background provider** — FLUX.2 klein 4B behind doctor detection; provenance records engine and licence
+- [x] **3. Optional AI background provider** — FLUX.2 klein 4B behind doctor detection; provenance records engine and licence ([#20](https://github.com/kajisho5/thumbnail-skill/pull/20), ADR-12)
   - Done when: absent model = doctor DEGRADED and a refusal, not a crash
 - [ ] **4. (agent side) full ThumbnailDocument** — logo image, several text elements
   - Done when: tracked in video-production-agent

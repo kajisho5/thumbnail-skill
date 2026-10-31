@@ -10,7 +10,11 @@ document on stdin; exactly one response document on stdout. `thumbnail skill --j
 contract, `thumbnail doctor --json` the environment (fonts, ffmpeg-skill, path policy).
 
 Tools: `thumbnail/validate` (structural check only), `thumbnail/render` (canvas + assets + elements
--> PNG/JPEG), `thumbnail/extract_frame` (one video timestamp -> one frame, nothing else).
+-> PNG/JPEG), `thumbnail/extract_frame` (one video timestamp -> one frame, nothing else), and the
+optional `thumbnail/generate_background` (one AI background image from a caller-written prompt and
+seed, FLUX.2 [klein] 4B, only when `thumbnail doctor --json` -> `checks.background_providers` says
+`available`; otherwise it is refused with `TOOL_ERROR` / `provider_unavailable`, and nothing else
+changes). Use its output as an ordinary `image` asset; report its `provenance` (engine, licence).
 
 Rules for a calling agent:
 1. Decide everything about content before calling this skill: which still image, or which exact

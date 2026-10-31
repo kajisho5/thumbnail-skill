@@ -19,6 +19,11 @@ dependencies = [
     "Pillow>=11.3.0; python_version < '3.10'",
 ]
 
+[project.optional-dependencies]
+# The optional AI background provider (ADR-12): FLUX.2 [klein] 4B through diffusers' Flux2KleinPipeline (added in
+# diffusers 0.37.0), whose text encoder is transformers' Qwen3. Weights are never downloaded by this skill.
+flux2 = ["torch", "diffusers>=0.37.0", "transformers>=4.51.0"]
+
 [project.scripts]
 thumbnail = "thumbnail_skill.cli:main"
 

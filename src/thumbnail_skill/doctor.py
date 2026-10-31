@@ -11,6 +11,7 @@ import PIL
 
 from . import DOCTOR_SCHEMA_VERSION, SKILL_ID, VERSION
 from .adapter import FLAGS_USED, FfmpegSkill
+from .background import providers_status
 from .errors import ThumbnailError
 from .fonts import FONT_REGISTRY, font_status
 from .model import ELEMENT_TYPES, OUTPUT_FORMATS
@@ -48,6 +49,14 @@ def doctor_report(ffmpeg_skill_dir: Optional[str] = None, workspace: Optional[st
         checks["ffmpeg_skill"] = {"status": "missing", "detail": e.message, "tried": e.details.get("tried"),
                                   "impact": "video_frame assets will fail TOOL_ERROR; still-image-only documents are unaffected"}
         warnings.append("ffmpeg-skill not found: video_frame assets are unavailable, still-image thumbnails are unaffected")
+
+    # Optional AI background providers (ADR-12): not configured changes nothing; configured but unable to run is DEGRADED.
+    providers = providers_status()
+    checks["background_providers"] = providers
+    for pid, st in providers.items():
+        if st["status"] == "unavailable":
+            warnings.append(f"background provider {pid!r} is configured ({st['configure_env']}) but cannot run: " + "; ".join(st.get("problems") or [])
+                            + " (thumbnail/generate_background will be refused; render and extract_frame are unaffected)")
 
     checks["element_types"] = list(ELEMENT_TYPES)
     checks["output_formats"] = {f: {"status": "ok", "extensions": list(s["extensions"])} for f, s in OUTPUT_FORMATS.items()}

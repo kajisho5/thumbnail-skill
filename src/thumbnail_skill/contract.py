@@ -6,6 +6,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
+from .background import MAX_PROMPT_LENGTH, MAX_SEED, MAX_STEPS, PROVIDERS, SIZE_MULTIPLE, provider_ids
+from .background import MAX_SIZE as BG_MAX_SIZE, MIN_SIZE as BG_MIN_SIZE
 from .adapter import FLAGS_USED, OPTIONAL_FLAGS, SUPPORTED_CONTRACT_VERSION, TOOLS_USED
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import ENGINE_NAME, RESPONSE_SCHEMA_ID
@@ -34,6 +36,19 @@ TOOLS: List[Dict[str, Any]] = [
      "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
      "idempotency_hint": "same source content + same timestamp + same skill/engine version reuses the cached artifact",
      "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes the output file", "writes a reuse cache entry under the workspace"]},
+    {"tool_id": "thumbnail/generate_background", "role": "execution",
+     "description": "Optional (ADR-12): generate one background image from a caller-written prompt and an explicit seed with a named, locally "
+                    "installed AI provider (FLUX.2 [klein] 4B), as a validated PNG/JPEG with provenance (engine, model, licence). Never decides what "
+                    "to show and never composes: the result is an ordinary image asset for thumbnail/render. Refused (TOOL_ERROR, "
+                    "reason provider_unavailable) when the provider is not configured or cannot run.",
+     "input": {"background": {"provider": "provider id", "prompt": "string", "width": "int", "height": "int", "seed": "int",
+                              "steps": "int (optional)", "guidance_scale": "number (optional)"},
+               "output": "OutputSpec", "options": "RenderOptions"},
+     "output": {"output": "path", "format": "png|jpeg", "width": "int", "height": "int", "size": "int", "sha256": "str", "reused": "bool (always false)",
+                "provenance": "object (generated, provider, engine, model, licence, prompt, seed, steps, guidance_scale)"},
+     "produces_output": True, "writes_media": True, "deterministic": False, "mutates_input": False, "ai": True, "optional": True,
+     "requires": "a configured background provider (see background_providers); never downloads a model, opens no connection",
+     "side_effects": ["writes the output file"]},
 ]
 
 # Cross-repository Capability ids (kajisho5/AI-video-production-OS docs/SPEC.md
@@ -47,6 +62,7 @@ TOOLS: List[Dict[str, Any]] = [
 CAPABILITY_IDS: Dict[str, str] = {
     "thumbnail/render": "thumbnail.render",
     "thumbnail/extract_frame": "thumbnail.extract_frame",
+    "thumbnail/generate_background": "thumbnail.generate_background",
 }
 
 
@@ -104,6 +120,27 @@ def platform_presets() -> Dict[str, Any]:
     }
 
 
+def background_providers() -> Dict[str, Any]:
+    """The optional AI background providers (ADR-12): a new top-level key beside the core sections, which keep describing
+    the deterministic render path (`execution.ai` false, `deterministic` true) exactly as consumers pin them."""
+    return {
+        "tool": "thumbnail/generate_background", "ai": True, "optional": True, "deterministic": False,
+        "core_tools_use_ai": False,
+        "core_tools": ["thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame"],
+        "without_a_provider": "render, extract_frame and validate are unchanged; doctor reports the provider not_configured without changing its status; "
+                              "generate_background is refused (TOOL_ERROR, reason provider_unavailable, not retryable)",
+        "configured_but_unavailable": "doctor status degraded (a warning names what is missing); generate_background refused the same way",
+        "network": False, "downloads_models": False,
+        "request_limits": {"prompt_chars": MAX_PROMPT_LENGTH, "width": f"{BG_MIN_SIZE}..{BG_MAX_SIZE}, a multiple of {SIZE_MULTIPLE}",
+                           "height": f"{BG_MIN_SIZE}..{BG_MAX_SIZE}, a multiple of {SIZE_MULTIPLE}", "seed": f"0..{MAX_SEED}", "steps": f"1..{MAX_STEPS}",
+                           "guidance_scale": "0..20"},
+        "providers": {pid: PROVIDERS[pid]().describe() for pid in provider_ids()},
+        "provenance": ["generated", "provider", "engine", "engine_version", "model", "licence", "licence_url", "model_card", "prompt", "prompt_sha256",
+                       "seed", "steps", "guidance_scale", "width", "height", "output_hash"],
+        "decision": "docs/decisions.md ADR-12",
+    }
+
+
 def skill_contract() -> Dict[str, Any]:
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
@@ -126,6 +163,7 @@ def skill_contract() -> Dict[str, Any]:
                      "elements": {"types": list(ELEMENT_TYPES), "max_elements": MAX_ELEMENTS, "stacking": "z_index, ties broken by document order", **element_specs()}},
         "output_formats": {f: {"extensions": list(s["extensions"]), "lossless": s["lossless"]} for f, s in OUTPUT_FORMATS.items()},
         "platform_presets": platform_presets(),
+        "background_providers": background_providers(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
                   "registry": {fid: {"display_name": e["display_name"], "role": e["role"]} for fid, e in FONT_REGISTRY.items()}},
@@ -149,4 +187,5 @@ def skill_contract() -> Dict[str, Any]:
     }
 
 
-__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets"]
+__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets",
+           "background_providers"]

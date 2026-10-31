@@ -8,6 +8,8 @@ alike. stderr: diagnostics only. Exit code: 0 on success, otherwise errors.EXIT_
   thumbnail validate request.json --json       structural validation only; touches nothing else
   thumbnail render request.json --json         render a ThumbnailDocument to PNG/JPEG
   thumbnail extract-frame request.json --json  one video frame at one timestamp, nothing else
+  thumbnail generate-background request.json --json
+                                               optional: one AI background image from a configured provider (ADR-12)
   thumbnail run - --json                       process-boundary transport: {"tool", "params"} in, one document out
 """
 from __future__ import annotations
@@ -68,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_opts(f)
     _add_common(f)
 
+    g = sub.add_parser("generate-background", help="optional: generate one background image with a configured AI provider (ADR-12)")
+    _add_run_opts(g)
+    _add_common(g)
+
     run = sub.add_parser("run", help="read one JSON tool request ({\"tool\": ..., \"params\": {...}}) from stdin, print one JSON response")
     run.add_argument("request", help="'-' (stdin)")
     run.add_argument("--workspace")
@@ -126,6 +132,8 @@ def _human(doc: dict) -> None:
         print(f"{PACKAGE_NAME} {VERSION}: {doc['status']}")
         for k in ("pillow", "ffmpeg_skill", "path_policy"):
             print(f"{k}: {json.dumps(doc['checks'].get(k))}")
+        for pid, st in doc["checks"].get("background_providers", {}).items():
+            print(f"  background provider {pid}: {st.get('status')}")
         for fid, st in doc["checks"].get("fonts", {}).items():
             print(f"  font {fid}: {st.get('status')}" + (f" ({st.get('path')})" if st.get("path") else ""))
         for p in doc["problems"]:
@@ -175,6 +183,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             doc = _run_tool_command("thumbnail/render", args)
         elif args.cmd == "extract-frame":
             doc = _run_tool_command("thumbnail/extract_frame", args)
+        elif args.cmd == "generate-background":
+            doc = _run_tool_command("thumbnail/generate_background", args)
         elif args.cmd == "run":
             if args.request != "-":
                 raise ThumbnailError("INVALID_REQUEST", "run takes '-' and reads one JSON request from stdin")
