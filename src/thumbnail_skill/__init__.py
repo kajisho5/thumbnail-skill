@@ -9,25 +9,33 @@ this skill never runs ffmpeg itself, never accepts a shell command, a filter str
 
 SKILL_ID = "thumbnail-skill"
 PACKAGE_NAME = "thumbnail-skill"
+
+
 def _version() -> str:
-    """The package version, from one place: this checkout's pyproject.toml when running from source,
-    otherwise the installed distribution's metadata. Releases bump only pyproject.toml."""
-    import re as _re
-    from pathlib import Path as _Path
-    pyproject = _Path(__file__).resolve().parents[2] / "pyproject.toml"
+    """The package version, from one place: pyproject.toml (the only file the release workflow bumps -- ADR-11).
+
+    From a source checkout (including an editable install, whose recorded metadata goes stale on the next release
+    bump) it is read straight from this checkout's pyproject.toml; from an installed wheel, from the distribution
+    metadata (importlib.metadata) that was built from that same pyproject.toml. If neither is found it reports
+    0.0.0+unknown rather than a plausible but wrong number."""
+    import re
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     if pyproject.is_file():
         text = pyproject.read_text(encoding="utf-8")
-        if _re.search(r'^name\s*=\s*"thumbnail-skill"', text, _re.M):
-            found = _re.search(r'^version\s*=\s*"([^"]+)"', text, _re.M)
+        if re.search(r'^name\s*=\s*"thumbnail-skill"\s*$', text, re.M):
+            found = re.search(r'^version\s*=\s*"([^"]+)"\s*$', text, re.M)
             if found:
                 return found.group(1)
-    import sys as _sys
-    for base in _sys.path:
-        for meta in sorted(_Path(base or ".").glob("thumbnail_skill-*.dist-info/METADATA")):
-            found = _re.search(r"^Version: *(\S+)", meta.read_text(encoding="utf-8", errors="replace"), _re.M)
-            if found:
-                return found.group(1)
-    return "0.0.0+unknown"
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+    except ImportError:  # pragma: no cover - Python < 3.8 is not supported
+        return "0.0.0+unknown"
+    try:
+        return version(PACKAGE_NAME)
+    except PackageNotFoundError:
+        return "0.0.0+unknown"
 
 
 VERSION = _version()

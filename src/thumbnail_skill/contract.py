@@ -55,6 +55,19 @@ def capability_provides() -> List[Dict[str, str]]:
             for t in TOOLS if t["tool_id"] in CAPABILITY_IDS]
 
 
+# The AI Video Production OS registry's `dependencies` (registry/capability_contract.schema.json): ffmpeg-skill, as a
+# range of its contract_version, in the shape audio-production-skill, color-grading-skill and motion-graphics-skill use.
+# A lower bound only, derived from adapter.SUPPORTED_CONTRACT_VERSION -- the same constant `ffmpeg_skill.contract_version`
+# below reports -- so the two can never say different things. Never compared at run time: compatibility is the flags the
+# located checkout exposes (ADR-8). Not required: only a video_frame asset (render) or extract_frame needs it (ADR-11).
+FFMPEG_SKILL_CONTRACT_RANGE = f">={SUPPORTED_CONTRACT_VERSION}"
+
+
+def dependencies() -> List[Dict[str, Any]]:
+    return [{"skill_id": "ffmpeg-skill", "version_range": FFMPEG_SKILL_CONTRACT_RANGE, "range_of": "contract_version", "required": False,
+             "for": [t["tool_id"] for t in TOOLS if t.get("delegates_to")], "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]}]
+
+
 def element_specs() -> Dict[str, Any]:
     return {
         "image": {"description": "A still image or an extracted video frame, placed and sized on the canvas.",
@@ -94,6 +107,7 @@ def platform_presets() -> Dict[str, Any]:
 def skill_contract() -> Dict[str, Any]:
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
+        "contract_version": str(CONTRACT_SCHEMA_VERSION),
         "kind": "execution", "role": "thumbnail rendering (deterministic execution); not decision, not selection, not design",
         "description": "Renders a typed ThumbnailDocument (canvas + still-image/video-frame assets + positioned image/text elements) into a "
                        "validated PNG/JPEG with provenance. Never decides what a thumbnail should show: no best-frame search, no face detection, "
@@ -104,6 +118,7 @@ def skill_contract() -> Dict[str, Any]:
                          "video editing", "color grading", "subtitle rendering", "arbitrary ffmpeg filters", "shell execution", "network access"],
         "tools": [dict(t) for t in TOOLS],
         "provides": capability_provides(),
+        "dependencies": dependencies(),
         "document": {"schema": REQUEST_SCHEMA_ID, "id_pattern": ID_RE.pattern, "forbidden_fields": sorted(FORBIDDEN_KEYS),
                      "canvas": {"width": f"{MIN_CANVAS}..{MAX_CANVAS}", "height": f"{MIN_CANVAS}..{MAX_CANVAS}", "background": "#RRGGBB(AA), default #000000"},
                      "assets": {"kinds": list(ASSET_KINDS), "max_assets": MAX_ASSETS,
@@ -134,4 +149,4 @@ def skill_contract() -> Dict[str, Any]:
     }
 
 
-__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "skill_contract", "element_specs", "capability_provides", "platform_presets"]
+__all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets"]
