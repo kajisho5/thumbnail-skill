@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.6 (2026-10-31)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Single-source the version; contract_version and ffmpeg-skill dependencies from their constants (roadmap step 1) (#19) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* Single-source the version; contract_version and ffmpeg-skill dependencies from their constants (roadmap step 1) (#19) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.5...v0.1.6
+
+
 ## v0.1.5 (2026-10-30)
 
 ## What's Changed

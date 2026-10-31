@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thumbnail-skill"
-version = "0.1.5"
+version = "0.1.6"
 description = "Deterministic thumbnail rendering execution Skill: a typed ThumbnailDocument (canvas + image/text elements) in, a validated PNG/JPEG artifact with provenance out. Not an AI agent; never decides what a thumbnail should show."
 readme = "README.md"
 license = {text = "MIT"}
