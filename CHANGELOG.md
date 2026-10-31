@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.8 (2026-10-31)
+
+## What's Changed
+
+## 📝 Documentation
+
+* chore: CI runs ffmpeg-skill v3.0.0; Python 3.9 runs against v2.24.1 (#21) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* chore: CI runs ffmpeg-skill v3.0.0; Python 3.9 runs against v2.24.1 (#21) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.7...v0.1.8
+
+
 ## v0.1.7 (2026-10-31)
 
 ## What's Changed
