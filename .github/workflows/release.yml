@@ -83,20 +83,11 @@ jobs:
 
       - name: Bump pyproject.toml
         if: steps.version.outputs.skip == 'false' && steps.version.outputs.bump_mode == 'auto'
+        # pyproject.toml is the only file that carries the version (docs/decisions.md ADR-11); the script also
+        # checks that thumbnail_skill.VERSION (which the contract reports) now equals it, and fails the release otherwise.
         env:
-          EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
-        run: |
-          set -euo pipefail
-          python3 - "$EFFECTIVE_VERSION" <<'PYEOF'
-          import re, sys, pathlib
-          new_version = sys.argv[1]
-          path = pathlib.Path("pyproject.toml")
-          text = path.read_text(encoding="utf-8")
-          updated, n = re.subn(r'(?m)^version = "[^"]*"', f'version = "{new_version}"', text, count=1)
-          if n != 1:
-              raise SystemExit(f"expected exactly one version line in pyproject.toml, replaced {n}")
-          path.write_text(updated, encoding="utf-8")
-          PYEOF
+          NEW_VERSION: ${{ steps.version.outputs.effective_version }}
+        run: python3 .github/scripts/bump_version.py
 
       # RELEASE_BODY comes from merged PR titles (release-drafter's own output) -- untrusted
       # text. It is passed through `env:` and expanded as a quoted shell variable, never

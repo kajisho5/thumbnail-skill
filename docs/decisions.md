@@ -144,3 +144,42 @@
   which also carries those fixed in 12.2.0/12.3.0). Pip already picks the newest compatible
   release, so this only raises the minimum; anyone who needs the fully patched Pillow runs Python
   3.11+.
+- **ADR-11 The version lives only in `pyproject.toml`; `contract_version` and the ffmpeg-skill
+  `dependencies` entry are derived from the constants they describe.** (`ECOSYSTEM_ROADMAP.md` step 1.)
+  *Version:* `_version()` already read this checkout's `pyproject.toml`, the only file
+  `release.yml` bumps. The installed-copy fallback globbed `thumbnail_skill-*.dist-info/METADATA`
+  over `sys.path`, which picks in lexicographic order, so `0.10.0` comes ahead of `0.9.0`. It now
+  asks `importlib.metadata.version("thumbnail-skill")`. The full rule, the same as qc-skill's
+  ADR-020 and motion-graphics-skill's ADR-21, is:
+  1. This checkout's `pyproject.toml`, used only if its `name` is `thumbnail-skill`. This covers an
+     editable install too, whose recorded metadata goes stale on the next bump.
+  2. Otherwise the installed wheel's metadata, built from that same file.
+  3. Otherwise `0.0.0+unknown`, never a plausible but wrong number.
+
+  The release's inline bump moved into `.github/scripts/bump_version.py`. It still writes only
+  `pyproject.toml`, then imports the package from `src/` and fails the release, before anything is
+  committed or tagged, unless `VERSION` equals the new version. It imports only the package, not
+  the contract, because the release job installs no Pillow. `tests/test_version_source.py` checks
+  that the contract and the CLI follow `VERSION`, and it runs the script on a copy of the checkout.
+  Not chosen: bumping a second constant as well, as audio-production-skill's
+  `bump_version_files.sh` does. Two copies stay correct only while a second regex keeps matching.
+  *Contract:* two new top-level keys.
+  - `contract_version` is `str(CONTRACT_SCHEMA_VERSION)`, i.e. `"1"`, the same value as
+    `schema_versions.contract` and the `@1` in `schema`. It is a string because this contract's other
+    version fields are strings; the OS schema accepts either type.
+  - `dependencies` lists ffmpeg-skill, in the OS `dependencies[]` shape that audio-production,
+    color-grading and motion-graphics use: `version_range` `">=1.0"` of its `contract_version`. That
+    value is derived from `adapter.SUPPORTED_CONTRACT_VERSION`, the same constant
+    `ffmpeg_skill.contract_version` already reports.
+    - The range is a lower bound only: the OS schema says Skills do not cap the upper version, and
+      ADR-8 says there is no version window.
+    - It is never compared at run time; the flags are still detected.
+    - `required` is `false`, because only a `video_frame` asset or `extract_frame` needs ffmpeg-skill.
+    - `for` lists the tool specs that delegate, and `tools` lists `TOOLS_USED`.
+
+  Nothing else in the contract changed.
+  *Consumers:* video-production-agent's thumbnail adapter compares `DRIFT_KEYS` (`schema`,
+  `skill_id`, `version`, `kind`, `execution`, `document`, `output_formats`, `fonts`, `rendering`,
+  `ffmpeg_skill`, `schema_versions`, `errors`, `provenance`, `deterministic`). Neither new key is in
+  that list, and `check_contract()` reads neither, so this is no drift and no breaking drift. Its
+  version gate is `("0.1.",)`, so this ships as a patch release, never with a `feature` label.

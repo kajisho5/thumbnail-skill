@@ -21,7 +21,7 @@ Agent uses extract_frame and render with one frame + one text only. Delegates to
 
 ## Steps
 
-- [ ] **1. Single-source the version + contract_version/dependencies**
+- [x] **1. Single-source the version + contract_version/dependencies** — version from pyproject.toml only; `contract_version` and `dependencies` (ffmpeg-skill `>=1.0`) from their constants (ADR-11, [#19](https://github.com/kajisho5/thumbnail-skill/pull/19))
   - Done when: contract version == pyproject
 - [x] **2. Platform size presets + output check** — YouTube 1280x720 etc. ([#17](https://github.com/kajisho5/thumbnail-skill/pull/17))
   - Done when: test per preset
