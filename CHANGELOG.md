@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.10 (2026-11-05)
+
+## What's Changed
+
+## 📝 Documentation
+
+* docs(roadmap): bring status and wiring up to date (2026-11-05 review) (#23) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.9...v0.1.10
+
+
 ## v0.1.9 (2026-11-05)
 
 ## What's Changed
