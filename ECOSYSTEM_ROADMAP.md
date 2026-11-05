@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-pyproject 0.1.1 but VERSION 0.1.0. Python + Pillow. validate, render (ThumbnailDocument), extract_frame. 95 tests, CI on 3 OSes.
+0.1.9, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3). 95 tests, CI on 3 OSes.
 
 ## What this repository owns
 
@@ -17,7 +17,7 @@ pyproject 0.1.1 but VERSION 0.1.0. Python + Pillow. validate, render (ThumbnailD
 
 ## Wiring
 
-Agent uses extract_frame and render with one frame + one text only. Delegates to ffmpeg-skill probe, look.
+Agent uses extract_frame and render with the full ThumbnailDocument: up to four texts, a logo, colours (step 4, video-production-agent#100). Pinned at 0.1.8. Delegates to ffmpeg-skill probe, look.
 
 ## Steps
 
@@ -35,4 +35,4 @@ Agent uses extract_frame and render with one frame + one text only. Delegates to
 imagemagick `preset youtube-thumbnail` and remotion `still` can also produce thumbnails; ownership stays here.
 
 ---
-Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
+Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (3.x, 42 tools, contract_version 2.0; treated as complete, proposals go to Velisa's ROADMAP). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
