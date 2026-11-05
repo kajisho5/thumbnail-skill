@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.11 (2026-11-05)
+
+## What's Changed
+
+## 📝 Documentation
+
+* docs(roadmap): field review steps (2026-11-05) (#24) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.10...v0.1.11
+
+
 ## v0.1.10 (2026-11-05)
 
 ## What's Changed
