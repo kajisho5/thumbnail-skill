@@ -29,6 +29,18 @@ Agent uses extract_frame and render with the full ThumbnailDocument: up to four 
   - Done when: absent model = doctor DEGRADED and a refusal, not a crash
 - [x] **4. (agent side) full ThumbnailDocument** — logo image, several text elements ([video-production-agent#100](https://github.com/kajisho5/video-production-agent/pull/100))
   - Done when: tracked in video-production-agent
+- [ ] **5. Batch thumbnails from a CSV** — one ThumbnailDocument template plus a CSV (title, speaker, photo, session) renders one thumbnail per row in 16:9 and, when asked, 9:16; names that do not fit are shrunk to a stated minimum, never cut. Field review 2026-11-05 (Velisa ROADMAP, third round)
+  - なぜ要るか：学会の全セッション分や連載回のサムネイルを一度に揃えられる
+  - Done when: a 10-row fixture writes 20 files at the platform sizes, each passing the existing output check
+- [ ] **6. Frame choice and face-aware layout** — candidate frames ranked by measured facts (sharpness and exposure from media-analysis-skill, eyes open and face size from detection-skill landmarks when present); text placed away from the chosen face
+  - なぜ要るか：目をつぶったコマや顔に文字がかかったサムネイルを避けられる
+  - Done when: a fixture with a blinking frame and a sharp frame ranks the sharp one first; the title box never overlaps the face box
+- [ ] **7. A/B variants and the small-size check** — `render --variants N` writes N documented variants (layout, colour, frame) of one thumbnail, and each is checked at the size it is seen on a phone (text height in pixels at 320 px wide, contrast through qc-skill text legibility)
+  - なぜ要るか：YouTube のサムネイル A/B テストに出す案を、文字が小さすぎる案を除いたうえで用意できる
+  - Done when: three variants are written and one with 10 px text at phone size is reported, not dropped
+- [ ] **8. Layered output** — each composed layer (background, photo, text, logo) also written as a PNG with alpha and a manifest (position, size, order) for a designer to rebuild it
+  - なぜ要るか：デザイナーが文字だけ直したいときに、最初から作り直さずに済む
+  - Done when: the layers composited by the manifest equal the thumbnail pixel for pixel
 
 ## Boundaries
 
