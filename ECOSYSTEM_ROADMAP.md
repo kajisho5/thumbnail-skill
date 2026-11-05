@@ -27,7 +27,7 @@ Agent uses extract_frame and render with one frame + one text only. Delegates to
   - Done when: test per preset
 - [x] **3. Optional AI background provider** — FLUX.2 klein 4B behind doctor detection; provenance records engine and licence ([#20](https://github.com/kajisho5/thumbnail-skill/pull/20), ADR-12)
   - Done when: absent model = doctor DEGRADED and a refusal, not a crash
-- [ ] **4. (agent side) full ThumbnailDocument** — logo image, several text elements
+- [x] **4. (agent side) full ThumbnailDocument** — logo image, several text elements ([video-production-agent#100](https://github.com/kajisho5/video-production-agent/pull/100))
   - Done when: tracked in video-production-agent
 
 ## Boundaries
