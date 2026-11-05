@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.9 (2026-11-05)
+
+## What's Changed
+
+## 📝 Documentation
+
+* docs: tick roadmap step 4 (agent side, video-production-agent#100) (#22) @kajisho5
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.8...v0.1.9
+
+
 ## v0.1.8 (2026-10-31)
 
 ## What's Changed
