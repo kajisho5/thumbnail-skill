@@ -50,6 +50,27 @@ TOOLS: List[Dict[str, Any]] = [
      "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
      "idempotency_hint": "each file is a thumbnail/render and is reused from its cache the same way",
      "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes one output file per row and target", "writes reuse cache entries under the workspace"]},
+    {"tool_id": "thumbnail/choose_frame", "role": "ranking",
+     "description": "Rank the sampled frames of a detection-skill/detections@1 face document (detection faces --attributes) by a stated, weighted "
+                    "formula over measured facts: eyes open, frontal angle and face size from detection-skill, sharpness from the caller's frame "
+                    "measures or else detection-skill's face sharpness, exposure from the caller's frame measures. Frames whose main face has its "
+                    "eyes closed come after every frame where they are open. Every part and every missing part is listed. Detects nothing and "
+                    "reads no pixels; the ranking suggests and the caller decides.",
+     "input": {"detections": "detection-skill/detections@1 (kind face, with attributes)", "detections_path": "file (instead of detections)",
+               "video": "file (optional; checked against detections.source.fingerprint)", "measures": "[{t, sharpness?, mean_luma?}] (optional)",
+               "weights": "{eyes_open, sharpness, exposure, frontal, size} (optional)", "eyes_closed_below": "0..1 (optional, default 0.5)"},
+     "output": {"ranking": "[{rank, index, t, score, parts, missing, sources, eyes_closed, faces, main_face, main_face_box}]", "chosen": "the first ranked frame",
+                "asset": "{kind: video_frame, path, timestamp} when video is given", "method": "object"},
+     "produces_output": False, "writes_media": False, "deterministic": True, "mutates_input": False, "side_effects": []},
+    {"tool_id": "thumbnail/place_text", "role": "layout",
+     "description": "Move one text element of a ThumbnailDocument to the first candidate position (caller-given, or eight edge and corner "
+                    "positions) whose painted box stays on the canvas and clears every face box by a margin. Face boxes come from "
+                    "detection-skill and are mapped onto the canvas through the image element's crop, fit and position. Refused when no "
+                    "candidate is clear; the text is never placed over a face. Returns the updated document; renders nothing.",
+     "input": {"document": "ThumbnailDocument", "text_element": "element_id", "image_element": "element_id", "faces": "[[x, y, w, h]] in frame_size pixels",
+               "frame_size": "{width, height} (required for a video_frame asset)", "candidates": "[{name?, position, align?}] (optional)", "margin": "px (default 16)"},
+     "output": {"document": "ThumbnailDocument", "placement": "{chosen, position, align, text_box, face_boxes, margin, tried}"},
+     "produces_output": False, "writes_media": False, "deterministic": True, "mutates_input": False, "side_effects": []},
     {"tool_id": "thumbnail/generate_background", "role": "execution",
      "description": "Optional (ADR-12): generate one background image from a caller-written prompt and an explicit seed with a named, locally "
                     "installed AI provider (FLUX.2 [klein] 4B), as a validated PNG/JPEG with provenance (engine, model, licence). Never decides what "
@@ -135,6 +156,25 @@ def platform_presets() -> Dict[str, Any]:
     }
 
 
+def frame_choice() -> Dict[str, Any]:
+    """`thumbnail/choose_frame` and `thumbnail/place_text` (ADR-15): a new top-level key."""
+    from .frames import DEFAULT_MARGIN, DETECTIONS_SCHEMA, EYES_CLOSED_BELOW, SHARPNESS_HALF, SIZE_FULL, WEIGHTS
+    return {
+        "tools": ["thumbnail/choose_frame", "thumbnail/place_text"],
+        "inputs": {"faces": f"{DETECTIONS_SCHEMA} from detection-skill (detection faces --attributes): boxes, eyes_open, frontal, size, sharpness",
+                   "frame_measures": "caller-supplied [{t, sharpness, mean_luma}]; media-analysis-skill does not publish frame sharpness or exposure yet"},
+        "score": {"weights": dict(WEIGHTS), "sharpness": f"s / (s + {SHARPNESS_HALF:g})", "exposure": "1 - 2 * |mean_luma - 0.5|",
+                  "size": f"min(1, size / {SIZE_FULL})", "missing_part": "counts 0, listed in missing",
+                  "eyes_closed_below": EYES_CLOSED_BELOW, "order": "eyes open first, then score, then input order", "main_face": "largest box"},
+        "placement": {"default_candidates": ["bottom-center", "top-center", "bottom-left", "bottom-right", "top-left", "top-right", "middle-left", "middle-right"],
+                      "default_margin_px": DEFAULT_MARGIN, "text_box": "layout block, background and ink with stroke and shadow (renderer.text_box)",
+                      "face_mapping": "through the image element's crop, fit (cover, contain, fill, none) and position; rotation 0 only",
+                      "none_clear": "VALIDATION_ERROR (reason no_position_clear_of_faces), every tried position listed"},
+        "heuristic": True, "detects": False, "reads_pixels": False,
+        "decision": "docs/decisions.md ADR-15",
+    }
+
+
 def batch() -> Dict[str, Any]:
     """`thumbnail/render_batch` (ADR-14): a new top-level key; nothing a consumer already pins changes shape."""
     from .batch import BUILTIN_FIELDS, CSV_DELIMITERS, CSV_ENCODINGS, DEFAULT_NAME, MAX_CELL_LENGTH, MAX_CSV_BYTES, MAX_ROWS, MAX_TARGETS, NAME_RE
@@ -187,11 +227,13 @@ def skill_contract() -> Dict[str, Any]:
         "contract_version": str(CONTRACT_SCHEMA_VERSION),
         "kind": "execution", "role": "thumbnail rendering (deterministic execution); not decision, not selection, not design",
         "description": "Renders a typed ThumbnailDocument (canvas + still-image/video-frame assets + positioned image/text elements) into a "
-                       "validated PNG/JPEG with provenance. Never decides what a thumbnail should show: no best-frame search, no face detection, "
-                       "no OCR, no automatic layout or title generation, no click-through prediction, no A/B or publish decisions. Not an AI agent.",
+                       "validated PNG/JPEG with provenance. Never decides what a thumbnail should show: it ranks candidate frames and moves text clear of "
+                       "faces only from facts measured elsewhere (detection-skill faces, caller frame measures) by stated formulas, and the caller "
+                       "decides. No face detection or pixel analysis of its own, no OCR, no title generation, no click-through prediction, no A/B "
+                       "or publish decisions. Not an AI agent.",
         "repository": "https://github.com/kajisho5/thumbnail-skill",
-        "not_provided": ["AI reasoning", "decisions", "production plans", "automatic frame selection", "face/object detection", "OCR",
-                         "automatic title or layout generation", "click-through-rate prediction", "A/B testing", "publish decisions",
+        "not_provided": ["AI reasoning", "decisions", "production plans", "searching a video for frames", "face/object detection", "OCR",
+                         "automatic title generation", "free-form layout generation", "click-through-rate prediction", "A/B testing", "publish decisions",
                          "video editing", "color grading", "subtitle rendering", "arbitrary ffmpeg filters", "shell execution", "network access"],
         "tools": [dict(t) for t in TOOLS],
         "provides": capability_provides(),
@@ -204,6 +246,7 @@ def skill_contract() -> Dict[str, Any]:
         "output_formats": {f: {"extensions": list(s["extensions"]), "lossless": s["lossless"]} for f, s in OUTPUT_FORMATS.items()},
         "platform_presets": platform_presets(),
         "batch": batch(),
+        "frame_choice": frame_choice(),
         "background_providers": background_providers(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
@@ -229,4 +272,4 @@ def skill_contract() -> Dict[str, Any]:
 
 
 __all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets",
-           "background_providers", "batch"]
+           "background_providers", "batch", "frame_choice"]

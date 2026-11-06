@@ -91,6 +91,8 @@ thumbnail validate request.json --json         # structural check only; no file 
 thumbnail render request.json --json           # canvas + assets + elements -> PNG/JPEG
 thumbnail extract-frame request.json --json    # one video timestamp -> one frame, nothing else
 thumbnail render-batch request.json --json     # one template per platform target + a CSV -> one thumbnail per row and target
+thumbnail choose-frame request.json --json     # rank sampled frames by measured facts (detection-skill faces)
+thumbnail place-text request.json --json       # move one text element clear of the faces in the frame
 thumbnail generate-background request.json --json
                                                 # optional: one AI background image from a configured provider (ADR-12)
 thumbnail skill --json                         # the machine-readable contract (source of truth)
@@ -295,6 +297,28 @@ layout. `{{column}}` placeholders are filled from the row (`row` and `preset` ar
 - **Nothing is written** until every row and target has been checked: placeholders, fonts, text fit,
   input files, and safe and unique output names. Each file is then an ordinary `thumbnail/render`,
   with its output check and `output.preset` check.
+
+## Frame choice and face-aware text
+
+Two tools (ADR-15; roadmap step 6) that detect nothing themselves and write no file:
+
+- `thumbnail/choose_frame` ranks the sampled frames of a detection-skill face document
+  (`detection faces --attributes` -> `detection-skill/detections@1`) by eyes open, sharpness, exposure,
+  frontal angle and face size. The formula is in `thumbnail skill --json` -> `frame_choice`, and
+  every part is listed. A frame whose main face has its eyes closed comes after every frame where
+  they are open. Frame sharpness and exposure come from the caller's `measures [{t, sharpness,
+  mean_luma}]`; without them, sharpness is detection-skill's face sharpness and exposure is listed
+  as `missing`. With `video` (its sha256 must match the detections), the chosen frame comes back as
+  a `video_frame` asset.
+- `thumbnail/place_text` maps the face boxes onto the canvas through the image element that shows
+  the frame. It moves one text element to the first candidate position whose painted box stays on
+  the canvas and clear of every face, and returns the updated document for `thumbnail/render`. When
+  no position is clear it refuses (`no_position_clear_of_faces`) rather than cover a face.
+
+```json
+{"tool": "thumbnail/place_text", "params": {"document": {"...": "..."}, "text_element": "title", "image_element": "frame_el",
+  "faces": [[500, 160, 220, 260]], "frame_size": {"width": 1920, "height": 1080}, "margin": 16}}
+```
 
 ## Optional AI background
 

@@ -296,3 +296,50 @@
   passes the preset check in the response and again when the test opens it. The long title is shrunk to the largest
   size that fits, a minimum it cannot reach is refused before anything is written, and the tests also cover cp932,
   the UTF-8 BOM, the refusals and the CLI.
+- **ADR-15 Frame choice and face-aware text placement are arithmetic over facts measured elsewhere:
+  `thumbnail/choose_frame` ranks, `thumbnail/place_text` moves one text element clear of the faces, and neither
+  detects anything or reads a pixel.** (`ECOSYSTEM_ROADMAP.md` step 6: no thumbnails with closed eyes, no text over a
+  face.)
+  *Who measures what (checked 2026-11-06, read-only):* detection-skill's `detection faces --attributes` writes
+  `detection-skill/detections@1`, with per-face `box`, landmarks and `attributes` (`size`, `frontal`, `sharpness` as a
+  Laplacian variance, and `eyes_open`, "about 0.8 open, 0.2 closed", its ADR-007). That document is the input here,
+  in the published shape. media-analysis-skill does **not** publish frame sharpness or exposure: its ADR-029 lists
+  "sharpness / exposure" as a gap it did not implement. So frame-level `measures [{t, sharpness?, mean_luma?}]` come
+  from the caller, and a part nobody measured counts 0 and is named in `missing`. This skill does not measure them
+  itself, because measurement belongs to the measuring skills. If media-analysis-skill adds them, the caller passes its
+  values here; that is a proposal for media-analysis-skill, not a change made from here.
+  *Score:* per frame, its main face (the largest box) scores `0.30 eyes_open + 0.25 s/(s+100) + 0.15 exposure + 0.15
+  frontal + 0.15 min(1, size/0.4)`. The sharpness and size terms and the 100 / 0.4 constants are detection-skill
+  face-rank@1's. Exposure is added as `1 - 2 |mean_luma - 0.5|` (a heuristic: mid-grey scores 1, black or white 0),
+  and the other weights are scaled down to make room. Sharpness is the caller's frame measure when there is one,
+  otherwise detection-skill's face sharpness; `sources` says which. A frame whose main face has `eyes_open` below
+  `eyes_closed_below` (0.5, halfway between detection-skill's open and closed figures) is ordered after every frame
+  where the eyes are open, whatever its score. A sharp blink is still a blink. Then the score orders, then the input
+  order. Frames without a face come last with a null score. Weights may be given and are normalised. With `video`,
+  its sha256 must equal the detections' `source.fingerprint`, and the chosen frame is returned as a ready
+  `video_frame` asset.
+  *Placement:* the face boxes are mapped onto the canvas through the image element's crop, fit and position, with the
+  renderer's own arithmetic (`cover` scale and centre-crop, `contain`, `fill`, `none`). They are scaled first when
+  `frame_size` (the detections' pixel space) differs from the image's own size. Rotated elements are refused
+  (`UNSUPPORTED_OPERATION`). The text element is then tried at each candidate position in order, either the caller's
+  or eight edge and corner positions with a 5 % inset (bottom-centre first). The first candidate whose painted box
+  (`renderer.text_box`: layout block, background, ink with stroke and shadow) lies on the canvas and overlaps no face
+  box grown by `margin` (16 px) is used. If none is clear, the request is refused (`VALIDATION_ERROR`,
+  `no_position_clear_of_faces`, every try listed) rather than placing text over a face. The font size is not
+  changed; that is ADR-14's `text_fit`.
+  *Shape:* two tools that write no file (`produces_output: false`, so no Capability id, the same rule as
+  `validate`). `place_text` returns the updated ThumbnailDocument, which the caller renders. Not chosen: a ranking
+  step inside `render`. That would change `render`'s declared input (pinned as fatal drift by video-production-agent)
+  and hide a heuristic inside a deterministic renderer.
+  *Contract:* the two tools, a new top-level `frame_choice` section (weights, formulas, defaults, `detects: false`,
+  `reads_pixels: false`), and honest wording: the description and `not_provided` now say this skill does no
+  detection of its own ("searching a video for frames", "face/object detection", "free-form layout generation" stay
+  not provided). `document`, `execution`, `errors`, `provenance` and the existing tools' declarations are unchanged.
+  video-production-agent's `check_contract` and `contract_breaking_drift` against its pinned `contract_0.1.11.json`
+  report nothing; `contract_drift` lists the two tools as installed but not pinned.
+  *Tests:* `tests/test_frames.py`. On a blinking-and-sharp fixture the sharp open frame ranks first, the blurred open
+  frame second, the blink third and the faceless frame last. A closed-eyes frame with the higher score still ranks
+  after an open one. The caller's measures feed sharpness and exposure. On a 5x3 grid of face positions, the title box
+  never overlaps the face box, geometrically and on rendered pixels: the face region is byte-identical with and
+  without the title. The mapping has a test for each fit mode. *Limits:* the detections fixture is synthetic, in
+  detection-skill's published shape; it is not a live detection-skill run, which needs its OpenCV/YuNet model.

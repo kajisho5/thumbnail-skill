@@ -74,6 +74,36 @@ def build_batch_fixture(directory: Path) -> Dict[str, Path]:
     return {"csv": csv_path, "dir": d}
 
 
+def face_detections(frames, frame_size=(1280, 720), fingerprint="sha256:" + "0" * 64):
+    """A detection-skill/detections@1 face document in the shape `detection faces --attributes` writes (its
+    docs/detections.md and schemas/detections.schema.json): one entry per sampled frame, `[x, y, w, h]` boxes in
+    source pixels, five landmarks, and per-face attributes (size, yaw/roll, frontal, sharpness, eyes_open).
+    `frames` is [(t, [(box, eyes_open, sharpness), ...]), ...]; nothing here runs a detector."""
+    w, h = frame_size
+    out = []
+    for i, (t, faces) in enumerate(frames):
+        dets = []
+        for box, eyes, sharp in faces:
+            x, y, bw, bh = box
+            dets.append({"t": t, "kind": "face", "box": [float(x), float(y), float(bw), float(bh)],
+                         "box_norm": [round(x / w, 5), round(y / h, 5), round(bw / w, 5), round(bh / h, 5)], "score": 0.93, "label": None,
+                         "landmarks": [[x + 0.3 * bw, y + 0.4 * bh], [x + 0.7 * bw, y + 0.4 * bh], [x + 0.5 * bw, y + 0.6 * bh],
+                                       [x + 0.35 * bw, y + 0.8 * bh], [x + 0.65 * bw, y + 0.8 * bh]],
+                         "attributes": {"size": round(bh / h, 4), "yaw_deg": 4.0, "roll_deg": 1.0, "frontal": 0.998, "sharpness": sharp,
+                                        "mouth_contrast": 0.3, "eyes_open": eyes},
+                         "engine": "yunet", "model": "face_detection_yunet_2023mar.onnx", "model_sha256": "1" * 64})
+        out.append({"index": i, "t": t, "detections": dets})
+    return {"schema": "detection-skill/detections@1", "kind": "face",
+            "source": {"filename": "talk.mp4", "fingerprint": fingerprint, "size_bytes": 1, "media_type": "video", "duration": 10.0,
+                       "width": w, "height": h, "fps": 25.0},
+            "frame_size": {"width": w, "height": h},
+            "sampling": {"method": "at", "every": None, "times": [f[0] for f in frames], "scene_points": [], "frames_tool": "ffmpeg-skill/look"},
+            "engine": {"id": "yunet", "kind": "face"}, "parameters": {"min_score": 0.6}, "frames": out,
+            "counts": {"frames": len(out), "frames_with_detections": sum(1 for f in out if f["detections"]), "detections": sum(len(f["detections"]) for f in out)},
+            "skill": "detection-skill", "skill_version": "0.3.0", "tool": "detection/faces", "created_at": "2026-11-06T00:00:00Z",
+            "processing_seconds": 0.1, "warnings": []}
+
+
 def build_all(directory: Path) -> Dict[str, Path]:
     files = build_images(directory)
     if ffmpeg_available():
