@@ -110,6 +110,8 @@ class Executor:
                 return self._envelope(True, "ok", self._extract_frame(params))
             if tool == "thumbnail/render_batch":
                 return self._envelope(True, "ok", self._render_batch(params))
+            if tool == "thumbnail/render_variants":
+                return self._envelope(True, "ok", self._render_variants(params))
             if tool == "thumbnail/choose_frame":
                 return self._envelope(True, "ok", self._choose_frame(params))
             if tool == "thumbnail/place_text":
@@ -384,6 +386,103 @@ class Executor:
         return {"items": items, "count": len(items), "rows": len(req["rows"]), "targets": [t["preset"] for t in req["targets"]],
                 "operations": ["thumbnail/render_batch"], "provenance": provenance}
 
+    # ---- thumbnail/render_variants (ADR-16)
+    def _render_variants(self, params: Any) -> Dict[str, Any]:
+        """N documented variants of one thumbnail, each an ordinary `_render`, each checked at phone size. Every variant
+        is planned and parsed before the first is written; a variant that fails the small-size check is reported."""
+        from .model import parse_options
+        from .qcskill import QcSkill
+        from .variants import build_variant, clipped_box, ink_height, parse_variants
+        if not isinstance(params, dict):
+            raise ThumbnailError("INVALID_REQUEST", "params must be a JSON object")
+        base = {k: v for k, v in params.items() if k != "variants"}
+        req = parse_render_request(base)
+        if not req.output.path:
+            raise ThumbnailError("INVALID_REQUEST", "'output' is required for thumbnail/render_variants", {"field": "output"})
+        if isinstance(params.get("options"), dict):
+            self._apply_policy_overrides(parse_options(params["options"]))
+        raw_doc = params["document"]
+        spec = parse_variants(params.get("variants"), req.document, None)
+        out_path = Path(req.output.path)
+        ext = out_path.suffix
+        plans = []
+        for k in range(1, spec["count"] + 1):
+            doc_k, choices = build_variant(raw_doc, spec, k)
+            out_k = dict(params["output"], path=str(out_path.with_name(f"{out_path.stem}-v{k}{ext}")))
+            body = {**base, "document": doc_k, "output": out_k}
+            try:
+                parsed = parse_render_request(body)
+            except ThumbnailError as e:
+                e.message = f"variant {k} ({choices}): {e.message}"
+                e.details = {**e.details, "variant": k, "choices": choices}
+                raise
+            target = self.policy.resolve_write_path(out_k["path"], "output")
+            if target.exists() and not req.output.overwrite:
+                raise ThumbnailError("OUTPUT_ERROR", f"output already exists (set overwrite: true to replace it): {target}", {"reason": "exists", "path": str(target), "variant": k})
+            plans.append((k, choices, body, parsed.document))
+
+        qc: Optional[QcSkill] = None
+        qc_problem: Optional[str] = None
+        try:
+            qc = QcSkill.locate(spec["qc_skill"], self.timeout)
+        except ThumbnailError as e:
+            qc_problem = e.message
+            self.warnings.append(f"contrast not measured: {e.message} (the text height check still runs)")
+        W = req.document.canvas.width
+        variants: List[Dict[str, Any]] = []
+        for k, choices, body, document in plans:
+            res = self._render(body)
+            canvas = (document.canvas.width, document.canvas.height)
+            texts = [e for e in document.elements if e.text is not None]
+            fonts = {e.element_id: resolve_font(e.text.font_id) for e in texts}   # type: ignore[union-attr]
+            boxes = {e.element_id: clipped_box(e.text, fonts[e.element_id], canvas) for e in texts}   # type: ignore[arg-type]
+            measured: Dict[str, Any] = {}
+            qc_info = None
+            regions = [eid for eid in boxes if boxes[eid] is not None]
+            if qc is not None and regions:
+                try:
+                    values, qc_info = qc.text_regions(Path(res["output"]), [boxes[eid] for eid in regions], self.policy.resolve_work_dir(TMP_DIR_NAME))  # type: ignore[misc]
+                    measured = dict(zip(regions, values))
+                except ThumbnailError as e:
+                    qc_problem = e.message
+                    self.warnings.append(f"variant {k}: contrast not measured: {e.message}")
+            checks = []
+            for e in texts:
+                content = e.text
+                assert content is not None
+                ink = ink_height(content, fonts[e.element_id], canvas)
+                at_phone = round(ink * spec["phone_width"] / canvas[0], 1)
+                m = measured.get(e.element_id)
+                contrast = m.get("contrast_ratio") if isinstance(m, dict) and m.get("measured") else None
+                findings = []
+                if at_phone < spec["min_text_height_px"]:
+                    findings.append({"code": "text_too_small", "expected": f">= {spec['min_text_height_px']:g} px", "got": at_phone})
+                if contrast is not None and contrast < spec["min_contrast_ratio"]:
+                    findings.append({"code": "low_contrast", "expected": f">= {spec['min_contrast_ratio']:g}", "got": contrast})
+                if contrast is None:
+                    why = (m or {}).get("reason") if isinstance(m, dict) else None
+                    findings.append({"code": "contrast_unmeasured", "reason": why or ("the text lies off the canvas" if boxes[e.element_id] is None else qc_problem or "not measured")})
+                checks.append({"element_id": e.element_id, "text_height_px": ink, "text_height_px_at_phone": at_phone, "contrast_ratio": contrast,
+                               "contrast_source": "qc-skill video.text_regions" if contrast is not None else None, "box": list(boxes[e.element_id]) if boxes[e.element_id] else None,
+                               "findings": findings})
+            failing = [f for c in checks for f in c["findings"] if f["code"] != "contrast_unmeasured"]
+            status = "fail" if failing else ("unknown" if any(f["code"] == "contrast_unmeasured" for c in checks for f in c["findings"]) else "pass")
+            description = f"layout {choices['layout']}, palette {choices['palette']}, frame {choices['frame']}"
+            variants.append({"variant": k, "output": res["output"], "format": res["format"], "width": res["width"], "height": res["height"], "size": res["size"],
+                             "sha256": res["sha256"], "reused": res["reused"], "preset_check": res.get("preset"), "choices": choices, "description": description,
+                             "small_size": {"status": status, "ok": status != "fail", "phone_width": spec["phone_width"], "scale": round(spec["phone_width"] / canvas[0], 6),
+                                            "min_text_height_px": spec["min_text_height_px"], "min_contrast_ratio": spec["min_contrast_ratio"], "texts": checks,
+                                            "qc_skill": qc_info},
+                             "identity": res["provenance"]["identity"]})
+        flagged = [v["variant"] for v in variants if v["small_size"]["status"] == "fail"]
+        provenance = {"skill": SKILL_ID, "skill_version": VERSION, "operation": "thumbnail/render_variants", "engine": ENGINE_NAME, "engine_version": _engine_version(),
+                      "document_id": req.document.document_id, "canvas_width": W, "qc_skill": qc.describe() if qc else None,
+                      "outputs": [{"variant": v["variant"], "output_hash": v["sha256"], "identity": v["identity"], "choices": v["choices"]} for v in variants]}
+        return {"variants": variants, "count": len(variants), "flagged": flagged, "text_element": spec["text_element"],
+                "axes": {"layouts": [x["name"] for x in spec["layouts"]], "palettes": [x["name"] for x in spec["palettes"]], "frames": [x["name"] for x in spec["frames"]]},
+                "rule": "variant k takes entry (k-1) mod n of each axis; entry 0 of each axis is the document as given, so variant 1 is the original",
+                "operations": ["thumbnail/render_variants"], "provenance": provenance}
+
     # ---- thumbnail/choose_frame, thumbnail/place_text (ADR-15): arithmetic over measured facts, no file written
     def _options_policy(self, params: Any) -> None:
         from .model import parse_options
@@ -547,6 +646,6 @@ class Executor:
         return self._with_preset(body, preset_result)
 
 
-TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/choose_frame", "thumbnail/place_text", "thumbnail/generate_background")
+TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/render_variants", "thumbnail/choose_frame", "thumbnail/place_text", "thumbnail/generate_background")
 
 __all__ = ["Executor", "RESPONSE_SCHEMA_ID", "TOOLS", "ENGINE_NAME"]

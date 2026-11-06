@@ -53,3 +53,17 @@ def has_cjk_font() -> bool:
     repo installs); tests exercising CJK glyph rendering skip cleanly rather than failing on an
     environment gap that isn't a code defect."""
     return font_status("cjk")["status"] == "available"
+
+
+@pytest.fixture(scope="session")
+def qc_skill_dir() -> str:
+    """A qc-skill checkout for the variants' contrast check (ADR-16), resolved like ffmpeg_skill_dir: the env var,
+    then `vendor/qc-skill` (as CI creates), then a sibling checkout. Tests that need it skip if none resolves."""
+    for candidate in (
+        os.environ.get("THUMBNAIL_SKILL_QC_SKILL_DIR"),
+        str(Path(__file__).resolve().parents[1] / "vendor" / "qc-skill"),
+        str(Path(__file__).resolve().parents[2] / "qc-skill"),
+    ):
+        if candidate and (Path(candidate) / "src" / "qc_skill" / "cli.py").is_file():
+            return candidate
+    pytest.skip("no qc-skill checkout found (set THUMBNAIL_SKILL_QC_SKILL_DIR)")

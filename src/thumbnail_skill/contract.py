@@ -50,6 +50,23 @@ TOOLS: List[Dict[str, Any]] = [
      "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
      "idempotency_hint": "each file is a thumbnail/render and is reused from its cache the same way",
      "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes one output file per row and target", "writes reuse cache entries under the workspace"]},
+    {"tool_id": "thumbnail/render_variants", "role": "execution",
+     "description": "Write N documented variants of one thumbnail for a platform A/B test (CLI: thumbnail render --variants N). Variant k takes "
+                    "entry (k-1) mod n of each axis: the text element's layout, its palette, and the frame one image element shows; entry 0 of "
+                    "each axis is the document as given, so variant 1 is the original. Each variant is a thumbnail/render and is checked at "
+                    "phone size: its text height at phone_width px wide (default 320) and its contrast through qc-skill's text legibility. A "
+                    "variant below a minimum is reported (flagged), never dropped. Never picks a winner.",
+     "input": {"document": "ThumbnailDocument", "output": "OutputSpec (variants are written as <stem>-v1..vN)", "options": "RenderOptions",
+               "variants": {"count": "1..12", "text_element": "element_id (default: the first text element)", "layouts": "[{name, position, align?, font_size?}] (optional)",
+                            "palettes": "[{name, color, background?, stroke?}] (optional)", "frame_element": "element_id", "frames": "[{name, asset}] (optional)",
+                            "phone_width": "px (default 320)", "min_text_height_px": "px at phone_width (default 12)", "min_contrast_ratio": "default 4.5",
+                            "qc_skill": "checkout directory (optional)"}},
+     "output": {"variants": "[{variant, output, choices, description, small_size {status, ok, texts [{element_id, text_height_px_at_phone, contrast_ratio, findings}]}}]",
+                "flagged": "[variant]", "axes": "object", "provenance": "object"},
+     "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
+     "idempotency_hint": "each variant is a thumbnail/render and is reused from its cache the same way",
+     "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look", "qc-skill/run"],
+     "side_effects": ["writes one output file per variant", "writes reuse cache entries under the workspace"]},
     {"tool_id": "thumbnail/choose_frame", "role": "ranking",
      "description": "Rank the sampled frames of a detection-skill/detections@1 face document (detection faces --attributes) by a stated, weighted "
                     "formula over measured facts: eyes open, frontal angle and face size from detection-skill, sharpness from the caller's frame "
@@ -98,6 +115,7 @@ CAPABILITY_IDS: Dict[str, str] = {
     "thumbnail/render": "thumbnail.render",
     "thumbnail/extract_frame": "thumbnail.extract_frame",
     "thumbnail/render_batch": "thumbnail.render_batch",
+    "thumbnail/render_variants": "thumbnail.render_variants",
     "thumbnail/generate_background": "thumbnail.generate_background",
 }
 
@@ -115,9 +133,18 @@ def capability_provides() -> List[Dict[str, str]]:
 FFMPEG_SKILL_CONTRACT_RANGE = f">={SUPPORTED_CONTRACT_VERSION}"
 
 
+# qc-skill (ADR-16): only render_variants' contrast check uses it, and only when it is found; without it the contrast is
+# reported as not measured. A lower bound of its contract_version ("1" in qc-skill 1.0.0), never compared at run time.
+QC_SKILL_CONTRACT_RANGE = ">=1"
+
+
 def dependencies() -> List[Dict[str, Any]]:
     return [{"skill_id": "ffmpeg-skill", "version_range": FFMPEG_SKILL_CONTRACT_RANGE, "range_of": "contract_version", "required": False,
-             "for": [t["tool_id"] for t in TOOLS if t.get("delegates_to")], "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]}]
+             "for": [t["tool_id"] for t in TOOLS if any(d.startswith("ffmpeg-skill/") for d in t.get("delegates_to") or [])],
+             "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]},
+            {"skill_id": "qc-skill", "version_range": QC_SKILL_CONTRACT_RANGE, "range_of": "contract_version", "required": False,
+             "for": [t["tool_id"] for t in TOOLS if "qc-skill/run" in (t.get("delegates_to") or [])], "tools": ["qc-skill/run"],
+             "uses": "video.text_regions (text legibility, its ADR-018) on a written thumbnail"}]
 
 
 def element_specs() -> Dict[str, Any]:
@@ -153,6 +180,30 @@ def platform_presets() -> Dict[str, Any]:
                            "min_width": p["min_width"], "min_height": p["min_height"], "max_width": p["max_width"], "max_height": p["max_height"],
                            "formats": list(p["formats"]), "max_bytes": p["max_bytes"], "unverified": list(p["unverified"]), "sources": list(p["sources"])}
                     for name, p in PLATFORM_PRESETS.items()},
+    }
+
+
+def variants() -> Dict[str, Any]:
+    """`thumbnail/render_variants` (ADR-16): a new top-level key."""
+    from .variants import DEFAULT_PALETTES, MAX_VARIANTS, MIN_CONTRAST_RATIO, MIN_TEXT_HEIGHT_PX, PHONE_WIDTH
+    return {
+        "tool": "thumbnail/render_variants", "cli": "thumbnail render request.json --variants N --json", "max_variants": MAX_VARIANTS,
+        "axes": {"layout": "the text element's position and alignment (and font_size when an entry gives one); default: eight edge and corner positions",
+                 "palette": "the text element's colour, background band and stroke; default: " + ", ".join(p["name"] for p in DEFAULT_PALETTES),
+                 "frame": "the asset one image element shows (variants.frames + variants.frame_element); default: none"},
+        "rule": "variant k takes entry (k-1) mod n of each axis; entry 0 of each axis is the document as given ('as-given'), so variant 1 is the original",
+        "files": "<output stem>-v<k><ext> beside output.path; output.preset is checked on every variant",
+        "small_size_check": {
+            "phone_width": PHONE_WIDTH,
+            "text_height": "per text element: the tallest run of pixel rows containing its own glyph ink (fill only, alpha >= 128), drawn alone with the "
+                           "renderer's layout, times phone_width / canvas width",
+            "min_text_height_px": MIN_TEXT_HEIGHT_PX, "min_text_height_note": "this skill's default floor at phone_width, a heuristic, not a platform figure",
+            "contrast": "qc-skill video.text_regions on the written variant at the element's painted box (WCAG 2.x contrast ratio, qc-skill ADR-018)",
+            "min_contrast_ratio": MIN_CONTRAST_RATIO, "without_qc_skill": "contrast_unmeasured (status unknown) and a warning; the height check still runs",
+            "below_a_minimum": "reported: small_size.status fail, findings text_too_small / low_contrast, the variant listed in flagged; never dropped",
+        },
+        "not_provided": ["picking a winner", "click-through prediction", "running the A/B test"],
+        "decision": "docs/decisions.md ADR-16",
     }
 
 
@@ -247,6 +298,7 @@ def skill_contract() -> Dict[str, Any]:
         "platform_presets": platform_presets(),
         "batch": batch(),
         "frame_choice": frame_choice(),
+        "variants": variants(),
         "background_providers": background_providers(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
@@ -272,4 +324,4 @@ def skill_contract() -> Dict[str, Any]:
 
 
 __all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets",
-           "background_providers", "batch", "frame_choice"]
+           "background_providers", "batch", "frame_choice", "variants", "QC_SKILL_CONTRACT_RANGE"]

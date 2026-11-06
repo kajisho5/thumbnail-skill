@@ -52,15 +52,24 @@ def test_ffmpeg_skill_dependency_is_a_lower_bound_from_the_adapter_constant():
         "version_range": f">={SUPPORTED_CONTRACT_VERSION}",
         "range_of": "contract_version",
         "required": False,
-        "for": ["thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch"],
+        "for": ["thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/render_variants"],
         "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED],
+    }, {
+        # ADR-16: only render_variants' contrast check, and only when qc-skill is found
+        "skill_id": "qc-skill",
+        "version_range": ">=1",
+        "range_of": "contract_version",
+        "required": False,
+        "for": ["thumbnail/render_variants"],
+        "tools": ["qc-skill/run"],
+        "uses": "video.text_regions (text legibility, its ADR-018) on a written thumbnail",
     }]
     assert c["dependencies"][0]["version_range"] == ">=1.0"
     assert "<" not in c["dependencies"][0]["version_range"]  # no ceiling, and never an exact pin
     # the same constant the existing ffmpeg_skill block reports, and the same tools the tool specs delegate to
     assert c["ffmpeg_skill"]["contract_version"] == SUPPORTED_CONTRACT_VERSION
     delegated = {d for t in c["tools"] for d in t.get("delegates_to") or []}
-    assert delegated == set(c["dependencies"][0]["tools"])
+    assert delegated == set(c["dependencies"][0]["tools"]) | set(c["dependencies"][1]["tools"])
 
 
 def _run_python(code: str, python_path: Path, cwd: Path, isolated: bool) -> str:

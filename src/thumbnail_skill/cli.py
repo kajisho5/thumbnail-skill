@@ -7,6 +7,8 @@ alike. stderr: diagnostics only. Exit code: 0 on success, otherwise errors.EXIT_
   thumbnail doctor --json                      environment vs. contract (fonts, ffmpeg-skill, path policy)
   thumbnail validate request.json --json       structural validation only; touches nothing else
   thumbnail render request.json --json         render a ThumbnailDocument to PNG/JPEG
+  thumbnail render request.json --variants N --json
+                                               N documented variants (layout, colour, frame), each checked at phone size (ADR-16)
   thumbnail extract-frame request.json --json  one video frame at one timestamp, nothing else
   thumbnail render-batch request.json --json   one template per platform target + a CSV -> one thumbnail per row and target
   thumbnail choose-frame request.json --json   rank sampled frames by measured facts (detection-skill faces + caller measures)
@@ -67,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("render", help="render a ThumbnailDocument to a PNG/JPEG artifact")
     _add_run_opts(r)
+    r.add_argument("--variants", type=int, metavar="N", help="write N documented variants (<stem>-v1..vN) instead, each checked at phone size (ADR-16)")
+    r.add_argument("--qc-skill", help="qc-skill checkout used for the variants' contrast check (default: env THUMBNAIL_SKILL_QC_SKILL_DIR / ~/.claude/skills/qc-skill / ./vendor / ..)")
     _add_common(r)
 
     f = sub.add_parser("extract-frame", help="extract exactly one video frame at one timestamp")
@@ -137,7 +141,14 @@ def _human(doc: dict) -> None:
         e = doc["error"]
         sys.stderr.write(f"error [{e['code']}]: {e['message']}" + (f" {json.dumps(e.get('details'))}" if e.get("details") else "") + "\n")
         return
-    if "ranking" in doc:
+    if "variants" in doc and "flagged" in doc:
+        for v in doc["variants"]:
+            ss = v["small_size"]
+            print(f"wrote {v['output']} (variant {v['variant']}: {v['description']}) small-size {ss['status']}"
+                  + "".join(f"; {t['element_id']} {t['text_height_px_at_phone']}px at {ss['phone_width']}w, contrast {t['contrast_ratio']}" for t in ss["texts"]))
+        if doc["flagged"]:
+            print(f"flagged (kept, not dropped): variants {doc['flagged']}")
+    elif "ranking" in doc:
         for e in doc["ranking"]:
             print(f"rank {e['rank']}: t={e['t']} score={e['score']}" + (" (eyes closed)" if e.get("eyes_closed") else "") + (f" missing {e['missing']}" if e.get("missing") else ""))
     elif "placement" in doc:
@@ -186,6 +197,15 @@ def _run_tool_command(tool: str, args: argparse.Namespace) -> dict:
     if args.ffmpeg_skill and "ffmpeg_skill" not in options:
         options["ffmpeg_skill"] = args.ffmpeg_skill
     params["options"] = options
+    if tool == "thumbnail/render" and getattr(args, "variants", None) is not None:
+        raw_variants = params.get("variants")
+        if raw_variants is not None and not isinstance(raw_variants, dict):
+            raise ThumbnailError("INVALID_REQUEST", "'variants' must be a JSON object", {"field": "variants"})
+        variants = dict(raw_variants or {}, count=args.variants)
+        if args.qc_skill and "qc_skill" not in variants:
+            variants["qc_skill"] = args.qc_skill
+        params["variants"] = variants
+        tool = "thumbnail/render_variants"
     return run_tool(tool, params, policy, args.ffmpeg_skill, args.timeout)
 
 

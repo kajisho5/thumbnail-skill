@@ -343,3 +343,43 @@
   never overlaps the face box, geometrically and on rendered pixels: the face region is byte-identical with and
   without the title. The mapping has a test for each fit mode. *Limits:* the detections fixture is synthetic, in
   detection-skill's published shape; it is not a live detection-skill run, which needs its OpenCV/YuNet model.
+- **ADR-16 A/B variants are `thumbnail/render_variants` (`thumbnail render --variants N`): documented variants
+  from round-robin axes, each checked at phone size. Contrast is measured by qc-skill, and a variant that fails is
+  reported, never dropped.** (`ECOSYSTEM_ROADMAP.md` step 7: candidates for YouTube's thumbnail A/B test, without
+  the ones whose text is too small to read.)
+  *Variants:* three axes: the text element's layout (position, alignment, optionally font size), its palette (text
+  colour, background band, stroke), and the frame one image element shows. Variant k takes entry (k-1) mod n of
+  each axis. Entry 0 of every axis is the document as given (`as-given`), so variant 1 is the original. The axes
+  default to the eight edge and corner positions of ADR-15, three palettes (white on a dark band, black on a yellow
+  band, white with an outline) and no other frame. Every variant's choices and a one-line description are in the
+  response; each is an ordinary `thumbnail/render` written as `<stem>-v<k><ext>` and checked against
+  `output.preset`. All N are planned and parsed, and their paths checked, before the first is written. This skill
+  never picks a winner and never predicts click-through; running the test is the platform's job.
+  *Text height at phone size:* the tallest run of pixel rows containing the element's own glyph ink (fill only, alpha
+  >= 128), drawn alone with the renderer's layout, times `phone_width / canvas width`; `phone_width` is 320 (the
+  roadmap's figure). It is the same quantity as qc-skill's "ink height" (its ADR-018). It is measured here because
+  the element's own ink is known exactly, without separating it from the picture behind it, which a measurement
+  on the composed image has to do. `min_text_height_px` defaults to 12. That is this skill's heuristic, not a
+  platform figure: no platform documentation found gives a minimum text height for thumbnails (qc-skill gives no
+  default for the same reason). Callers can set it.
+  *Contrast:* qc-skill's text legibility. For each variant, one `qc run` (operation `check`, kind `video`, the still
+  decoded as one frame, `rules.video.text_regions` at each text element's painted box) returns `video.text_regions`
+  with the WCAG 2.x contrast ratio. `min_contrast_ratio` defaults to 4.5 (WCAG AA, qc-skill's default). This skill
+  computes no contrast itself. qc-skill is located like ffmpeg-skill (`variants.qc_skill` / `--qc-skill`,
+  `THUMBNAIL_SKILL_QC_SKILL_DIR`, `~/.claude/skills/qc-skill`, `./vendor/qc-skill`, `../qc-skill`, or an installed
+  `qc_skill`). It runs with `--no-cache`, the variant's directory as its only input root, a minimal environment and a
+  timeout. Without it, contrast is `contrast_unmeasured` (status `unknown`) with a warning, and the height check
+  still runs. `doctor` reports `checks.qc_skill` without changing its status.
+  *Reported, not dropped:* `small_size {status pass|fail|unknown, texts [{element_id, text_height_px_at_phone,
+  contrast_ratio, findings}]}` per variant and `flagged` (the failing variants). The file is still written, so the
+  caller sees the whole set. Layouts are never repaired; that is ADR-14's `text_fit`.
+  *Contract:* the new tool (`delegates_to` adds `qc-skill/run`), Capability id `thumbnail.render_variants`
+  (EXPERIMENTAL), a second `dependencies` entry (qc-skill, `>=1` of its `contract_version`, not required), and a
+  top-level `variants` section. `document`, `execution`, `errors`, `provenance` and the existing tools' declarations
+  are unchanged. video-production-agent's `check_contract` / `contract_breaking_drift` against its pinned
+  `contract_0.1.11.json` report nothing. CI also clones qc-skill `main` into `vendor/qc-skill`.
+  *Tests:* `tests/test_variants.py`. Three variants are written, and the one whose title is 10 px at 320 px wide
+  (the font size is found per OS, since font files differ) is flagged `text_too_small` while its file is kept. The
+  ink height equals the rendered glyph rows. With qc-skill, white on near-white is reported `low_contrast` and the
+  dark-band variant passes. Without qc-skill, contrast is unmeasured and a warning says so. The tests also cover the
+  frame axis, the refusals and the CLI.
