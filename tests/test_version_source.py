@@ -52,7 +52,7 @@ def test_ffmpeg_skill_dependency_is_a_lower_bound_from_the_adapter_constant():
         "version_range": f">={SUPPORTED_CONTRACT_VERSION}",
         "range_of": "contract_version",
         "required": False,
-        "for": ["thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/render_variants"],
+        "for": ["thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/render_layers", "thumbnail/render_variants"],
         "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED],
     }, {
         # ADR-16: only render_variants' contrast check, and only when qc-skill is found

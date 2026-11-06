@@ -110,6 +110,8 @@ class Executor:
                 return self._envelope(True, "ok", self._extract_frame(params))
             if tool == "thumbnail/render_batch":
                 return self._envelope(True, "ok", self._render_batch(params))
+            if tool == "thumbnail/render_layers":
+                return self._envelope(True, "ok", self._render_layers(params))
             if tool == "thumbnail/render_variants":
                 return self._envelope(True, "ok", self._render_variants(params))
             if tool == "thumbnail/choose_frame":
@@ -265,20 +267,7 @@ class Executor:
             images: Dict[str, "Image.Image"] = {}
             frame_provenance: Dict[str, Any] = {}
             try:
-                for asset in document.assets:
-                    ident = asset_identities[asset.asset_id]
-                    if asset.kind == "image":
-                        images[asset.asset_id] = _open_image(Path(ident["path"]), f"asset {asset.asset_id!r}")
-                    else:
-                        skill = self._ffmpeg_skill()
-                        tmp_dir = self.policy.resolve_work_dir(TMP_DIR_NAME)
-                        tmp_dir.mkdir(parents=True, exist_ok=True)
-                        frame_path = skill.extract_frame(ident["path"], asset.timestamp, tmp_dir, f"frame_{asset.asset_id}_{identity[:12]}", self.timeout)
-                        frame_img = _open_image(frame_path, f"asset {asset.asset_id!r}")
-                        images[asset.asset_id] = frame_img
-                        frame_provenance[asset.asset_id] = {"extracted_path": str(frame_path), "sha256": sha256_file(str(frame_path)),
-                                                            "width": frame_img.width, "height": frame_img.height, "tool": "ffmpeg-skill/look"}
-
+                self._open_assets(document, asset_identities, identity, images, frame_provenance)
                 canvas = render_document(document, images, fonts_used)
                 bg = tuple(int(document.canvas.background.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
                 final_img = _finalize_for_save(canvas, out.format, bg)
@@ -312,6 +301,24 @@ class Executor:
         body = {"output": str(final), "format": out.format, "width": width, "height": height, "size": out_size,
                 "sha256": f"sha256:{out_sha256}", "reused": reused, "operations": ["thumbnail/render"], "provenance": provenance}
         return self._with_preset(body, preset_result)
+
+    def _open_assets(self, document: ThumbnailDocument, asset_identities: Dict[str, Dict[str, Any]], identity: str,
+                     images: Dict[str, "Image.Image"], frame_provenance: Dict[str, Any]) -> None:
+        """Every asset as an opened Pillow image (into `images`): a still image from its resolved path, a video frame
+        through ffmpeg-skill/look. The caller closes them."""
+        for asset in document.assets:
+            ident = asset_identities[asset.asset_id]
+            if asset.kind == "image":
+                images[asset.asset_id] = _open_image(Path(ident["path"]), f"asset {asset.asset_id!r}")
+            else:
+                skill = self._ffmpeg_skill()
+                tmp_dir = self.policy.resolve_work_dir(TMP_DIR_NAME)
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                frame_path = skill.extract_frame(ident["path"], asset.timestamp, tmp_dir, f"frame_{asset.asset_id}_{identity[:12]}", self.timeout)
+                frame_img = _open_image(frame_path, f"asset {asset.asset_id!r}")
+                images[asset.asset_id] = frame_img
+                frame_provenance[asset.asset_id] = {"extracted_path": str(frame_path), "sha256": sha256_file(str(frame_path)),
+                                                    "width": frame_img.width, "height": frame_img.height, "tool": "ffmpeg-skill/look"}
 
     @staticmethod
     def _with_preset(body: Dict[str, Any], preset_result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -385,6 +392,69 @@ class Executor:
                       "outputs": [{"row": i["row"], "preset": i["preset"], "output_hash": i["sha256"], "identity": i["identity"]} for i in items]}
         return {"items": items, "count": len(items), "rows": len(req["rows"]), "targets": [t["preset"] for t in req["targets"]],
                 "operations": ["thumbnail/render_batch"], "provenance": provenance}
+
+    # ---- thumbnail/render_layers (ADR-17)
+    def _render_layers(self, params: Any) -> Dict[str, Any]:
+        """The thumbnail through `_render`, then the same document drawn again with every composite recorded: one PNG
+        with alpha per layer and a manifest, verified to rebuild the thumbnail pixel for pixel from the files on disk."""
+        from .layers import MANIFEST_NAME, build_layers, write_layers
+        from .model import _bool
+        from .renderer import LayerRecorder
+        if not isinstance(params, dict):
+            raise ThumbnailError("INVALID_REQUEST", "params must be a JSON object")
+        base = {k: v for k, v in params.items() if k != "layers"}
+        req = parse_render_request(base)
+        if not req.output.path:
+            raise ThumbnailError("INVALID_REQUEST", "'output' is required for thumbnail/render_layers", {"field": "output"})
+        from .model import _obj, parse_options
+        ld = _obj(params.get("layers"), "layers", ("directory", "overwrite"), ("directory",))
+        if not isinstance(ld["directory"], str) or not ld["directory"]:
+            raise ThumbnailError("INVALID_REQUEST", "layers.directory must be a non-empty string", {"field": "layers.directory"})
+        overwrite = _bool(ld.get("overwrite", req.output.overwrite), "layers.overwrite")
+        if isinstance(params.get("options"), dict):
+            self._apply_policy_overrides(parse_options(params["options"]))
+        layer_dir = self.policy.resolve_write_path(ld["directory"], "layers.directory", allow_dir=True)
+        if layer_dir.exists() and any(layer_dir.iterdir()) and not overwrite:
+            raise ThumbnailError("OUTPUT_ERROR", f"layers.directory is not empty (set layers.overwrite: true to replace its layers): {layer_dir}",
+                                 {"reason": "exists", "path": str(layer_dir)})
+        if overwrite and layer_dir.is_dir():
+            for old in list(layer_dir.glob("[0-9][0-9]-*.png")) + [layer_dir / MANIFEST_NAME]:
+                if old.is_file():
+                    old.unlink()
+
+        res = self._render(base)
+        document = req.document
+        asset_identities = {a.asset_id: self._resolve_asset_identity(a) for a in document.assets}
+        fonts_used = self._resolve_font_identities(document)
+        images: Dict[str, "Image.Image"] = {}
+        recorder = LayerRecorder()
+        try:
+            self._open_assets(document, asset_identities, res["provenance"]["identity"], images, {})
+            canvas = render_document(document, images, fonts_used, recorder)
+        finally:
+            for img in images.values():
+                try:
+                    img.close()
+                except Exception:
+                    pass
+        assert recorder.base is not None
+        size = (document.canvas.width, document.canvas.height)
+        if req.output.format == "png":
+            with Image.open(res["output"]) as written:
+                reference = written.convert("RGBA")
+            if reference.tobytes() != canvas.tobytes():
+                raise ThumbnailError("VALIDATION_ERROR", "the recorded render differs from the written thumbnail", {"reason": "layers_mismatch"})
+            note = "the written PNG thumbnail"
+        else:
+            reference = canvas
+            note = "the lossless composite the JPEG thumbnail was encoded from (JPEG itself is lossy)"
+        built = build_layers(size, recorder.base, recorder)
+        manifest = write_layers(layer_dir, built, size, reference, {"path": res["output"], "format": res["format"], "sha256": res["sha256"]}, note)
+        res["layers"] = {"directory": str(layer_dir), "manifest": str(layer_dir / MANIFEST_NAME), "count": sum(1 for e in manifest["layers"] if e["file"]),
+                         "layers": manifest["layers"], "verified": manifest["verified"]}
+        res["operations"] = ["thumbnail/render", "thumbnail/render_layers"]
+        res["provenance"]["layers_manifest_sha256"] = f"sha256:{sha256_file(str(layer_dir / MANIFEST_NAME))}"
+        return res
 
     # ---- thumbnail/render_variants (ADR-16)
     def _render_variants(self, params: Any) -> Dict[str, Any]:
@@ -646,6 +716,6 @@ class Executor:
         return self._with_preset(body, preset_result)
 
 
-TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/render_variants", "thumbnail/choose_frame", "thumbnail/place_text", "thumbnail/generate_background")
+TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/render_variants", "thumbnail/render_layers", "thumbnail/choose_frame", "thumbnail/place_text", "thumbnail/generate_background")
 
 __all__ = ["Executor", "RESPONSE_SCHEMA_ID", "TOOLS", "ENGINE_NAME"]

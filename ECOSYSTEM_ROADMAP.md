@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.1.9, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3), batch from a CSV (step 5), choose_frame and place_text (step 6), render --variants with the small-size check (step 7). CI on 3 OSes.
+0.1.9, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3), batch from a CSV (step 5), choose_frame and place_text (step 6), render --variants with the small-size check (step 7), render --layers (step 8). CI on 3 OSes.
 
 ## What this repository owns
 
@@ -41,9 +41,10 @@ Agent uses extract_frame and render with the full ThumbnailDocument: up to four 
   - なぜ要るか：YouTube のサムネイル A/B テストに出す案を、文字が小さすぎる案を除いたうえで用意できる
   - Done when: three variants are written and one with 10 px text at phone size is reported, not dropped
   - Done (ADR-16): `thumbnail render --variants N` (`thumbnail/render_variants`) writes `<stem>-v1..vN`. Variant k takes the k-th layout, palette and frame round robin, and variant 1 is the original; every choice is listed. Each variant is checked at 320 px wide: glyph ink height and contrast through qc-skill's `video.text_regions`. A variant below a minimum is flagged and kept. `tests/test_variants.py`: three variants are written and the 10 px one is flagged `text_too_small`, not dropped ([#27](https://github.com/kajisho5/thumbnail-skill/pull/27)). Caveat: the 12 px default minimum is this skill's heuristic, because no platform publishes one
-- [ ] **8. Layered output** — each composed layer (background, photo, text, logo) also written as a PNG with alpha and a manifest (position, size, order) for a designer to rebuild it
+- [x] **8. Layered output** — each composed layer (background, photo, text, logo) also written as a PNG with alpha and a manifest (position, size, order) for a designer to rebuild it
   - なぜ要るか：デザイナーが文字だけ直したいときに、最初から作り直さずに済む
   - Done when: the layers composited by the manifest equal the thumbnail pixel for pixel
+  - Done (ADR-17): `thumbnail render --layers DIR` (`thumbnail/render_layers`) records the renderer's own composites. It writes the background, each image (photo, logo) and each text, with its background band as a separate layer, as a PNG with alpha cropped to its pixels, plus `layers.json` (order, role, element id, position, size). Before answering it rebuilds the image from the files on disk and checks it against the thumbnail. `tests/test_layers.py` rebuilds with its own code and gets the written PNG byte for byte, with opacity, rotation, negative positions, stroke and shadow; for JPEG it compares against the lossless composite ([#28](https://github.com/kajisho5/thumbnail-skill/pull/28))
 
 ## Boundaries
 

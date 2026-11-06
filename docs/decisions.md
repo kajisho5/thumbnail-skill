@@ -383,3 +383,40 @@
   ink height equals the rendered glyph rows. With qc-skill, white on near-white is reported `low_contrast` and the
   dark-band variant passes. Without qc-skill, contrast is unmeasured and a warning says so. The tests also cover the
   frame axis, the refusals and the CLI.
+- **ADR-17 Layered output is the renderer's own composite operations, recorded: `thumbnail/render_layers`
+  (`thumbnail render --layers DIR`) writes one PNG with alpha per layer and a manifest, then checks that the
+  layers rebuild the thumbnail byte for byte.** (`ECOSYSTEM_ROADMAP.md` step 8: a designer can fix only the text
+  without starting over.)
+  *Layers:* `renderer.LayerRecorder` records every `alpha_composite` the renderer makes, in order, with its source
+  image and destination. Layer 0 is the canvas fill (the full canvas). Then, in stacking order: each image element
+  as pasted (after crop, fit, rotation and opacity), and each text element's background band and its text (after
+  opacity), as two layers. Each layer is cropped to the part of the canvas it covers and then to its non-transparent
+  pixels. A composite with no visible pixel (an element placed off the canvas) is listed with `file: null`. Layer
+  roles are what the renderer knows: `background`, `image`, `text_background`, `text`. Whether an image is a
+  "photo" or a "logo" is the caller's naming, so it appears as the `element_id`.
+  *Why it is exact:* the rebuild rule is the renderer's own operation. Start from layer 0 and alpha-composite each
+  further layer at its position, in order (Porter-Duff source-over on straight 8-bit RGBA, Pillow's
+  `Image.alpha_composite`). Cropping removes only alpha-0 pixels, and source-over with alpha 0 leaves the
+  destination unchanged. Pillow was checked on this before relying on it: cropped vs full-canvas compositing and
+  an alpha-0 no-op are byte-identical, and so is a destination partly outside the canvas. The renderer's drawing is
+  unchanged: the same composites run whether recording is on or not, and the render hash of a reference document is
+  identical before and after the change.
+  *The check:* after writing, the tool reads the layer files back from disk, rebuilds the image by the manifest and
+  compares it byte for byte with the written PNG (RGBA). For a JPEG thumbnail it compares with the lossless
+  composite the JPEG was encoded from, because JPEG is lossy; the manifest says which. A mismatch is
+  `VALIDATION_ERROR` (`layers_mismatch`). The recording render is also compared with the thumbnail that `render`
+  wrote, so a reused cache entry is covered too.
+  *Shape:* a new tool. A `layers` field on `render` would change `render`'s declared input, which
+  video-production-agent pins as fatal drift. The thumbnail itself still comes from `thumbnail/render`, with its
+  cache, output check and `output.preset` check. A non-empty layer directory needs `layers.overwrite`; that is
+  checked before anything is written, and overwriting removes the old layer files first.
+  *Contract:* the new tool, Capability id `thumbnail.render_layers` (EXPERIMENTAL), the tool in
+  `dependencies[0].for`, and a top-level `layered_output` section (manifest schema `thumbnail-skill/layers@1`,
+  fields, rule). `document`, `execution`, `errors`, `provenance` and the existing tools' declarations are unchanged.
+  video-production-agent's `check_contract` / `contract_breaking_drift` against its pinned `contract_0.1.11.json`
+  report nothing.
+  *Tests:* `tests/test_layers.py` rebuilds the image with its own code from the files on disk and compares it with
+  the thumbnail. The document exercises cover fit at a negative position with opacity, a rotated contain, an
+  off-canvas element, a logo with opacity, a text with background band, stroke, shadow and opacity, and a plain
+  text. Further cases: JPEG (against the lossless composite, which equals the PNG render), a reused render, a video
+  frame through ffmpeg-skill, overwrite and the CLI.

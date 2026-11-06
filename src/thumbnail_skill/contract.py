@@ -50,6 +50,17 @@ TOOLS: List[Dict[str, Any]] = [
      "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
      "idempotency_hint": "each file is a thumbnail/render and is reused from its cache the same way",
      "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes one output file per row and target", "writes reuse cache entries under the workspace"]},
+    {"tool_id": "thumbnail/render_layers", "role": "execution",
+     "description": "Render a ThumbnailDocument as thumbnail/render does and also write every composed layer (background, each image, each text "
+                    "background band, each text) as a PNG with alpha, cropped to its visible pixels, with a manifest (order, position, size) for a "
+                    "designer to rebuild it (CLI: thumbnail render --layers DIR). The tool rebuilds the image from the layer files on disk by the "
+                    "manifest and refuses (VALIDATION_ERROR, layers_mismatch) unless it equals the thumbnail pixel for pixel.",
+     "input": {"document": "ThumbnailDocument", "output": "OutputSpec", "options": "RenderOptions", "layers": {"directory": "path", "overwrite": "bool (default: output.overwrite)"}},
+     "output": {"output": "path", "format": "png|jpeg", "width": "int", "height": "int", "size": "int", "sha256": "str", "reused": "bool",
+                "layers": "{directory, manifest, count, layers [{order, role, element_id, file, position, size, sha256}], verified}", "provenance": "object"},
+     "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
+     "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"],
+     "side_effects": ["writes the output file", "writes one PNG per layer and layers.json into layers.directory", "writes a reuse cache entry under the workspace"]},
     {"tool_id": "thumbnail/render_variants", "role": "execution",
      "description": "Write N documented variants of one thumbnail for a platform A/B test (CLI: thumbnail render --variants N). Variant k takes "
                     "entry (k-1) mod n of each axis: the text element's layout, its palette, and the frame one image element shows; entry 0 of "
@@ -116,6 +127,7 @@ CAPABILITY_IDS: Dict[str, str] = {
     "thumbnail/extract_frame": "thumbnail.extract_frame",
     "thumbnail/render_batch": "thumbnail.render_batch",
     "thumbnail/render_variants": "thumbnail.render_variants",
+    "thumbnail/render_layers": "thumbnail.render_layers",
     "thumbnail/generate_background": "thumbnail.generate_background",
 }
 
@@ -180,6 +192,24 @@ def platform_presets() -> Dict[str, Any]:
                            "min_width": p["min_width"], "min_height": p["min_height"], "max_width": p["max_width"], "max_height": p["max_height"],
                            "formats": list(p["formats"]), "max_bytes": p["max_bytes"], "unverified": list(p["unverified"]), "sources": list(p["sources"])}
                     for name, p in PLATFORM_PRESETS.items()},
+    }
+
+
+def layered_output() -> Dict[str, Any]:
+    """`thumbnail/render_layers` (ADR-17): a new top-level key."""
+    from .layers import COMPOSE_RULE, MANIFEST_NAME, MANIFEST_SCHEMA
+    return {
+        "tool": "thumbnail/render_layers", "cli": "thumbnail render request.json --layers DIR --json",
+        "manifest": {"file": MANIFEST_NAME, "schema": MANIFEST_SCHEMA,
+                     "layer_fields": ["order", "role (background|image|text_background|text)", "element_id", "type", "z_index", "file", "position {x, y}",
+                                      "size {width, height}", "mode RGBA", "sha256"]},
+        "layers": "layer 0 is the canvas background (full canvas); then, in stacking order, each image element as pasted (after crop, fit, rotation, "
+                  "opacity) and each text element's background band and text (after opacity), each cropped to its visible pixels; a composite with "
+                  "no visible pixel is listed with file null",
+        "compose": COMPOSE_RULE,
+        "verified": "the image rebuilt from the layer files read back from disk equals the written PNG byte for byte (for a JPEG thumbnail: the "
+                    "lossless composite it was encoded from); otherwise VALIDATION_ERROR (reason layers_mismatch)",
+        "decision": "docs/decisions.md ADR-17",
     }
 
 
@@ -299,6 +329,7 @@ def skill_contract() -> Dict[str, Any]:
         "batch": batch(),
         "frame_choice": frame_choice(),
         "variants": variants(),
+        "layered_output": layered_output(),
         "background_providers": background_providers(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
@@ -324,4 +355,4 @@ def skill_contract() -> Dict[str, Any]:
 
 
 __all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets",
-           "background_providers", "batch", "frame_choice", "variants", "QC_SKILL_CONTRACT_RANGE"]
+           "background_providers", "batch", "frame_choice", "variants", "layered_output", "QC_SKILL_CONTRACT_RANGE"]

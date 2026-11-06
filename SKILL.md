@@ -15,7 +15,9 @@ Tools: `thumbnail/validate` (structural check only), `thumbnail/render` (canvas 
 per row and target; `{{column}}` placeholders; `text_fit` shrinks a name down to `min_font_size`,
 never cuts it; nothing is written until every row is checked), `thumbnail/render_variants`
 (`thumbnail render req.json --variants N`: N documented variants, each checked at 320 px wide for text
-height and, through qc-skill, contrast; a failing variant is flagged and kept), `thumbnail/choose_frame` (ranks a
+height and, through qc-skill, contrast; a failing variant is flagged and kept), `thumbnail/render_layers`
+(`thumbnail render req.json --layers DIR`: every composed layer as a PNG with alpha plus `layers.json`,
+verified to rebuild the thumbnail pixel for pixel), `thumbnail/choose_frame` (ranks a
 detection-skill `detections@1` face document's frames by eyes open, sharpness, exposure, angle and
 size; closed eyes rank last; detects nothing itself), `thumbnail/place_text` (moves one text
 element to the first position clear of every face; refuses rather than cover one), and the
