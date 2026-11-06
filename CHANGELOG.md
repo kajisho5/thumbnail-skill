@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.12 (2026-11-06)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Batch thumbnails from a CSV (roadmap step 5) (#25) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.11...v0.1.12
+
+
 ## v0.1.11 (2026-11-05)
 
 ## What's Changed
