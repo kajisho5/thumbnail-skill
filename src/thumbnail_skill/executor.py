@@ -110,6 +110,10 @@ class Executor:
                 return self._envelope(True, "ok", self._extract_frame(params))
             if tool == "thumbnail/render_batch":
                 return self._envelope(True, "ok", self._render_batch(params))
+            if tool == "thumbnail/choose_frame":
+                return self._envelope(True, "ok", self._choose_frame(params))
+            if tool == "thumbnail/place_text":
+                return self._envelope(True, "ok", self._place_text(params))
             if tool == "thumbnail/generate_background":
                 return self._envelope(True, "ok", self._generate_background(params))
             raise ThumbnailError("UNSUPPORTED_OPERATION", f"unknown tool {tool!r}", {"tool": tool, "supported": TOOLS})
@@ -380,6 +384,37 @@ class Executor:
         return {"items": items, "count": len(items), "rows": len(req["rows"]), "targets": [t["preset"] for t in req["targets"]],
                 "operations": ["thumbnail/render_batch"], "provenance": provenance}
 
+    # ---- thumbnail/choose_frame, thumbnail/place_text (ADR-15): arithmetic over measured facts, no file written
+    def _options_policy(self, params: Any) -> None:
+        from .model import parse_options
+        raw = params.get("options") if isinstance(params, dict) else None
+        if raw is not None:
+            self._apply_policy_overrides(parse_options(raw))
+
+    def _choose_frame(self, params: Any) -> Dict[str, Any]:
+        from .frames import choose_frame
+        self._options_policy(params)
+        body = choose_frame(params, lambda path, what: self.policy.resolve_input(path, what))
+        self.warnings.extend(body.pop("warnings", []))
+        body["operations"] = ["thumbnail/choose_frame"]
+        body["provenance"] = {"skill": SKILL_ID, "skill_version": VERSION, "operation": "thumbnail/choose_frame", "inputs": body["source"]}
+        return body
+
+    def _place_text(self, params: Any) -> Dict[str, Any]:
+        from .frames import place_text
+        self._options_policy(params)
+
+        def open_size(path: str) -> Tuple[int, int]:
+            img = _open_image(self.policy.resolve_input(path, "image asset"), "image asset")
+            size = img.size
+            img.close()
+            return size
+
+        body = place_text(params, open_size)
+        body["operations"] = ["thumbnail/place_text"]
+        body["provenance"] = {"skill": SKILL_ID, "skill_version": VERSION, "operation": "thumbnail/place_text"}
+        return body
+
     # ---- thumbnail/extract_frame
     def _extract_frame(self, params: Any) -> Dict[str, Any]:
         if not isinstance(params, dict):
@@ -512,6 +547,6 @@ class Executor:
         return self._with_preset(body, preset_result)
 
 
-TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/generate_background")
+TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/choose_frame", "thumbnail/place_text", "thumbnail/generate_background")
 
 __all__ = ["Executor", "RESPONSE_SCHEMA_ID", "TOOLS", "ENGINE_NAME"]

@@ -9,6 +9,8 @@ alike. stderr: diagnostics only. Exit code: 0 on success, otherwise errors.EXIT_
   thumbnail render request.json --json         render a ThumbnailDocument to PNG/JPEG
   thumbnail extract-frame request.json --json  one video frame at one timestamp, nothing else
   thumbnail render-batch request.json --json   one template per platform target + a CSV -> one thumbnail per row and target
+  thumbnail choose-frame request.json --json   rank sampled frames by measured facts (detection-skill faces + caller measures)
+  thumbnail place-text request.json --json     move one text element clear of the faces in the frame
   thumbnail generate-background request.json --json
                                                optional: one AI background image from a configured provider (ADR-12)
   thumbnail run - --json                       process-boundary transport: {"tool", "params"} in, one document out
@@ -75,6 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_opts(b)
     _add_common(b)
 
+    cf = sub.add_parser("choose-frame", help="rank the sampled frames of a detection-skill faces document by measured facts (ADR-15)")
+    _add_run_opts(cf)
+    _add_common(cf)
+
+    pt = sub.add_parser("place-text", help="move one text element to the first candidate position clear of every face (ADR-15)")
+    _add_run_opts(pt)
+    _add_common(pt)
+
     g = sub.add_parser("generate-background", help="optional: generate one background image with a configured AI provider (ADR-12)")
     _add_run_opts(g)
     _add_common(g)
@@ -127,7 +137,13 @@ def _human(doc: dict) -> None:
         e = doc["error"]
         sys.stderr.write(f"error [{e['code']}]: {e['message']}" + (f" {json.dumps(e.get('details'))}" if e.get("details") else "") + "\n")
         return
-    if "items" in doc:
+    if "ranking" in doc:
+        for e in doc["ranking"]:
+            print(f"rank {e['rank']}: t={e['t']} score={e['score']}" + (" (eyes closed)" if e.get("eyes_closed") else "") + (f" missing {e['missing']}" if e.get("missing") else ""))
+    elif "placement" in doc:
+        p = doc["placement"]
+        print(f"{p['text_element']}: {p['chosen']} at {p['position']} box {p['text_box']}")
+    elif "items" in doc:
         for item in doc["items"]:
             print(f"wrote {item['output']} (row {item['row']}, {item['preset']}, {item['width']}x{item['height']})" + (" [reused]" if item.get("reused") else ""))
         print(f"{doc['count']} file(s) from {doc['rows']} row(s) x {len(doc['targets'])} target(s)")
@@ -194,6 +210,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             doc = _run_tool_command("thumbnail/extract_frame", args)
         elif args.cmd == "render-batch":
             doc = _run_tool_command("thumbnail/render_batch", args)
+        elif args.cmd == "choose-frame":
+            doc = _run_tool_command("thumbnail/choose_frame", args)
+        elif args.cmd == "place-text":
+            doc = _run_tool_command("thumbnail/place_text", args)
         elif args.cmd == "generate-background":
             doc = _run_tool_command("thumbnail/generate_background", args)
         elif args.cmd == "run":
