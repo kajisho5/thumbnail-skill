@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.15 (2026-11-06)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Layered output (roadmap step 8) (#28) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.14...v0.1.15
+
+
 ## v0.1.14 (2026-11-06)
 
 ## What's Changed
