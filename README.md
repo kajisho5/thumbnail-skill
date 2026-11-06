@@ -89,6 +89,8 @@ subprocess it starts is ffmpeg-skill's own CLI, with typed argv, exactly the way
 thumbnail doctor --json                        # fonts, ffmpeg-skill, path policy, output formats
 thumbnail validate request.json --json         # structural check only; no file system, no font, no ffmpeg-skill
 thumbnail render request.json --json           # canvas + assets + elements -> PNG/JPEG
+thumbnail render request.json --layers layers/ --json
+                                                # also every composed layer as a PNG with alpha + layers.json
 thumbnail render request.json --variants 3 --json
                                                 # 3 documented variants (<stem>-v1..v3), each checked at phone size
 thumbnail extract-frame request.json --json    # one video timestamp -> one frame, nothing else
@@ -300,6 +302,18 @@ layout. `{{column}}` placeholders are filled from the row (`row` and `preset` ar
   input files, and safe and unique output names. Each file is then an ordinary `thumbnail/render`,
   with its output check and `output.preset` check.
 
+## Layered output
+
+`thumbnail render request.json --layers DIR` (tool `thumbnail/render_layers`, ADR-17; roadmap step 8)
+writes the thumbnail and also every layer it was composed from into `DIR`:
+`00-background.png`, then one PNG with alpha per image element and per text element (a text's
+background band is its own layer), each cropped to its visible pixels. It also writes `layers.json`
+with each layer's order, role, element id, position and size. To rebuild the thumbnail, start from
+layer 0 and alpha-composite each further layer at its position, in order. The tool does exactly that
+from the files on disk before it answers, and refuses (`layers_mismatch`) unless the result equals
+the thumbnail pixel for pixel (for a JPEG thumbnail: the lossless composite it was encoded from).
+A designer can then replace just the text layer.
+
 ## A/B variants and the small-size check
 
 `thumbnail render request.json --variants N` (tool `thumbnail/render_variants`, ADR-16; roadmap step 7)
@@ -384,7 +398,7 @@ preset's name.
 
 `skill --json` (alias `contract --json`) also publishes `provides`: `render` as Capability
 id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame`, `render_batch` as
-`thumbnail.render_batch`, `render_variants` as `thumbnail.render_variants`, the optional
+`thumbnail.render_batch`, `render_variants` as `thumbnail.render_variants`, `render_layers` as `thumbnail.render_layers`, the optional
 `generate_background` as `thumbnail.generate_background` — the identifiers a
 registry (see `kajisho5/AI-video-production-OS`) can resolve to this Skill without
 hardcoding it. `validate` has no Capability id — it produces no output artifact, only a

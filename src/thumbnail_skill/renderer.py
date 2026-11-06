@@ -8,7 +8,7 @@ position in the document, stable sort) so the caller's stacking is the only stac
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -74,7 +74,28 @@ def _rotate(img: "Image.Image", degrees: int) -> "Image.Image":
     return img.rotate(-degrees, expand=True)   # PIL rotates counter-clockwise; this skill's rotation is clockwise
 
 
-def draw_image_element(canvas: "Image.Image", content: ImageContent, source: "Image.Image", where: str) -> None:
+class LayerRecorder:
+    """Collects every composite the renderer makes, in order, as (image, dest, meta): exactly the operations that
+    built the canvas, so replaying them over the background reproduces it pixel for pixel (ADR-17)."""
+
+    def __init__(self) -> None:
+        self.ops: List[Tuple["Image.Image", Tuple[int, int], Dict[str, Any]]] = []
+        self.meta: Dict[str, Any] = {}
+        self.base: Optional["Image.Image"] = None   # the canvas fill, before any element
+
+    def composite(self, canvas: "Image.Image", src: "Image.Image", dest: Tuple[int, int], role: str) -> None:
+        canvas.alpha_composite(src, dest=dest)
+        self.ops.append((src, dest, {**self.meta, "role": role}))
+
+
+def _composite(canvas: "Image.Image", src: "Image.Image", dest: Tuple[int, int], recorder: Optional[LayerRecorder], role: str) -> None:
+    if recorder is None:
+        canvas.alpha_composite(src, dest=dest)
+    else:
+        recorder.composite(canvas, src, dest, role)
+
+
+def draw_image_element(canvas: "Image.Image", content: ImageContent, source: "Image.Image", where: str, recorder: Optional[LayerRecorder] = None) -> None:
     img = source.convert("RGBA")
     if content.crop is not None:
         img = _apply_crop(img, content.crop, where)
@@ -86,7 +107,7 @@ def draw_image_element(canvas: "Image.Image", content: ImageContent, source: "Im
         # centre the native-size source within the declared box, matching contain/cover's centring
         x += max(0, (content.size.width - img.width) // 2)
         y += max(0, (content.size.height - img.height) // 2)
-    canvas.alpha_composite(img, dest=(x, y))
+    _composite(canvas, img, (x, y), recorder, "image")
 
 
 def _measure_lines(draw: "ImageDraw.ImageDraw", lines: List[str], font: "ImageFont.FreeTypeFont", line_spacing: float) -> Any:
@@ -153,7 +174,7 @@ def text_box(content: TextContent, font_file: ResolvedFont) -> Tuple[int, int, i
             math.ceil(max(b[2] for b in boxes)), math.ceil(max(b[3] for b in boxes)))
 
 
-def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: ResolvedFont) -> None:
+def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: ResolvedFont, recorder: Optional[LayerRecorder] = None) -> None:
     draw = ImageDraw.Draw(canvas)
     font = load_font(content, font_file)
     lines, _, _, ax, ay, block_w, block_h, origins = _layout(draw, content, font)
@@ -163,7 +184,7 @@ def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: Re
         box = (round(ax - pad), round(ay - pad), round(ax + block_w + pad), round(ay + block_h + pad))
         overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
         ImageDraw.Draw(overlay).rectangle(box, fill=_hex_color(content.background.color))
-        canvas.alpha_composite(_apply_opacity(overlay, content.opacity))
+        _composite(canvas, _apply_opacity(overlay, content.opacity), (0, 0), recorder, "text_background")
 
     text_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     tdraw = ImageDraw.Draw(text_layer)
@@ -175,26 +196,31 @@ def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: Re
             tdraw.text((lx, ly), ln, font=font, fill=fill, stroke_width=content.stroke.width, stroke_fill=_hex_color(content.stroke.color))
         else:
             tdraw.text((lx, ly), ln, font=font, fill=fill)
-    canvas.alpha_composite(_apply_opacity(text_layer, content.opacity))
+    _composite(canvas, _apply_opacity(text_layer, content.opacity), (0, 0), recorder, "text")
 
 
-def render_document(document: ThumbnailDocument, images: Dict[str, "Image.Image"], fonts_used: Dict[str, ResolvedFont]) -> "Image.Image":
+def render_document(document: ThumbnailDocument, images: Dict[str, "Image.Image"], fonts_used: Dict[str, ResolvedFont],
+                    recorder: Optional[LayerRecorder] = None) -> "Image.Image":
     """`images` maps asset_id -> an already-opened, already-validated Pillow Image (the still image
     itself, or the decoded video frame). `fonts_used` maps font_id -> ResolvedFont. Pure function:
     no file I/O, no ffmpeg, no randomness; the same inputs always draw the same pixels."""
     canvas = Image.new("RGBA", (document.canvas.width, document.canvas.height), _hex_color(document.canvas.background))
+    if recorder is not None:
+        recorder.base = canvas.copy()
     ordered: List[ThumbnailElement] = sorted(enumerate(document.elements), key=lambda pair: (pair[1].z_index, pair[0]))
     for _, element in ordered:
+        if recorder is not None:
+            recorder.meta = {"element_id": element.element_id, "type": element.type, "z_index": element.z_index}
         if element.type == "image":
             content = element.image
             assert content is not None
             source = images[content.asset_id]
-            draw_image_element(canvas, content, source, f"elements[{element.element_id}].image")
+            draw_image_element(canvas, content, source, f"elements[{element.element_id}].image", recorder)
         else:
             content = element.text
             assert content is not None
-            draw_text_element(canvas, content, fonts_used[content.font_id])
+            draw_text_element(canvas, content, fonts_used[content.font_id], recorder)
     return canvas
 
 
-__all__ = ["render_document", "draw_image_element", "draw_text_element", "text_box", "load_font"]
+__all__ = ["LayerRecorder", "render_document", "draw_image_element", "draw_text_element", "text_box", "load_font"]
