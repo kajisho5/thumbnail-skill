@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.14 (2026-11-06)
+
+## What's Changed
+
+## 📝 Documentation
+
+* A/B variants and the small-size check (roadmap step 7) (#27) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* A/B variants and the small-size check (roadmap step 7) (#27) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.13...v0.1.14
+
+
 ## v0.1.13 (2026-11-06)
 
 ## What's Changed
