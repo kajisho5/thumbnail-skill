@@ -108,6 +108,8 @@ class Executor:
                 return self._envelope(True, "ok", self._render(params))
             if tool == "thumbnail/extract_frame":
                 return self._envelope(True, "ok", self._extract_frame(params))
+            if tool == "thumbnail/render_batch":
+                return self._envelope(True, "ok", self._render_batch(params))
             if tool == "thumbnail/generate_background":
                 return self._envelope(True, "ok", self._generate_background(params))
             raise ThumbnailError("UNSUPPORTED_OPERATION", f"unknown tool {tool!r}", {"tool": tool, "supported": TOOLS})
@@ -346,6 +348,38 @@ class Executor:
         img.close()
         return img.width, img.height, digest, size
 
+    # ---- thumbnail/render_batch (ADR-14)
+    def _render_batch(self, params: Any) -> Dict[str, Any]:
+        """One thumbnail per (row, target): every row is planned and checked first (nothing is written if any
+        row is refused), then each is rendered through `_render`, so each file passes the same output check
+        and `output.preset` check as a single render."""
+        from .batch import parse_batch, plan_batch
+        from .model import parse_options
+        raw_options = params.get("options") if isinstance(params, dict) else None
+        if isinstance(raw_options, dict):
+            self._apply_policy_overrides(parse_options(raw_options))   # inputs and outputs resolve under the request's own policy
+        req = parse_batch(params, lambda path, what: self.policy.resolve_input(path, what))
+        plans = plan_batch(req, lambda path, what: self.policy.resolve_input(path, what), lambda rel: self.policy.resolve_write_path(rel, "output"))
+        items: List[Dict[str, Any]] = []
+        for plan in plans:
+            body = dict(plan["params"])
+            if raw_options is not None:
+                body["options"] = raw_options
+            try:
+                res = self._render(body)
+            except ThumbnailError as e:
+                e.message = f"row {plan['row']} ({plan['preset']}): {e.message}"
+                e.details = {**e.details, "row": plan["row"], "preset": plan["preset"], "written": [i["output"] for i in items]}
+                raise
+            items.append({"row": plan["row"], "preset": plan["preset"], "output": res["output"], "format": res["format"], "width": res["width"],
+                          "height": res["height"], "size": res["size"], "sha256": res["sha256"], "reused": res["reused"], "preset_check": res.get("preset"),
+                          "fitted": plan["fitted"], "identity": res["provenance"]["identity"]})
+        provenance = {"skill": SKILL_ID, "skill_version": VERSION, "operation": "thumbnail/render_batch", "engine": ENGINE_NAME, "engine_version": _engine_version(),
+                      "source": req["source"], "rows": len(req["rows"]), "targets": [t["preset"] for t in req["targets"]],
+                      "outputs": [{"row": i["row"], "preset": i["preset"], "output_hash": i["sha256"], "identity": i["identity"]} for i in items]}
+        return {"items": items, "count": len(items), "rows": len(req["rows"]), "targets": [t["preset"] for t in req["targets"]],
+                "operations": ["thumbnail/render_batch"], "provenance": provenance}
+
     # ---- thumbnail/extract_frame
     def _extract_frame(self, params: Any) -> Dict[str, Any]:
         if not isinstance(params, dict):
@@ -478,6 +512,6 @@ class Executor:
         return self._with_preset(body, preset_result)
 
 
-TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/generate_background")
+TOOLS = ("thumbnail/validate", "thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch", "thumbnail/generate_background")
 
 __all__ = ["Executor", "RESPONSE_SCHEMA_ID", "TOOLS", "ENGINE_NAME"]

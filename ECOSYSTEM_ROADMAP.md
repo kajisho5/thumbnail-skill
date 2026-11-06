@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.1.9, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3). 95 tests, CI on 3 OSes.
+0.1.9, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3), batch from a CSV (step 5). CI on 3 OSes.
 
 ## What this repository owns
 
@@ -29,9 +29,10 @@ Agent uses extract_frame and render with the full ThumbnailDocument: up to four 
   - Done when: absent model = doctor DEGRADED and a refusal, not a crash
 - [x] **4. (agent side) full ThumbnailDocument** — logo image, several text elements ([video-production-agent#100](https://github.com/kajisho5/video-production-agent/pull/100))
   - Done when: tracked in video-production-agent
-- [ ] **5. Batch thumbnails from a CSV** — one ThumbnailDocument template plus a CSV (title, speaker, photo, session) renders one thumbnail per row in 16:9 and, when asked, 9:16; names that do not fit are shrunk to a stated minimum, never cut. Field review 2026-11-05 (Velisa ROADMAP, third round)
+- [x] **5. Batch thumbnails from a CSV** — one ThumbnailDocument template plus a CSV (title, speaker, photo, session) renders one thumbnail per row in 16:9 and, when asked, 9:16; names that do not fit are shrunk to a stated minimum, never cut. Field review 2026-11-05 (Velisa ROADMAP, third round)
   - なぜ要るか：学会の全セッション分や連載回のサムネイルを一度に揃えられる
   - Done when: a 10-row fixture writes 20 files at the platform sizes, each passing the existing output check
+  - Done (ADR-14): `thumbnail/render_batch` takes one template per `output.preset` (16:9 `youtube` and 9:16 `youtube-shorts` are two targets, each with its own layout) and a CSV (UTF-8 by default, `cp932` opt-in for Japanese Excel) or inline rows, with `{{column}}` placeholders. `text_fit` shrinks a text element one point at a time down to `min_font_size` until its painted box fits, and never cuts or wraps it; a row that cannot fit is refused before anything is written. Each file is an ordinary `thumbnail/render`. `tests/test_batch.py`: the 10-row fixture with two targets writes 20 files, each at its platform size and passing the preset check ([#25](https://github.com/kajisho5/thumbnail-skill/pull/25))
 - [ ] **6. Frame choice and face-aware layout** — candidate frames ranked by measured facts (sharpness and exposure from media-analysis-skill, eyes open and face size from detection-skill landmarks when present); text placed away from the chosen face
   - なぜ要るか：目をつぶったコマや顔に文字がかかったサムネイルを避けられる
   - Done when: a fixture with a blinking frame and a sharp frame ranks the sharp one first; the title box never overlaps the face box

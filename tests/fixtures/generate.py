@@ -44,6 +44,36 @@ def build_video(directory: Path, name: str = "video.mp4", source: str = "testsrc
     return path
 
 
+SESSIONS = [
+    # (title, speaker, session); row 4 has a long title that only fits once shrunk
+    ("Opening Keynote", "Ada Lovelace", "K1"),
+    ("Scaling Live Captions", "Grace Hopper", "A2"),
+    ("Colour Pipelines That Hold Up", "Hedy Lamarr", "A3"),
+    ("What Twelve Years of Conference Recordings Taught Us About Audio Levels", "Alan Turing", "B1"),
+    ("Edge Encoding", "Katherine Johnson", "B2"),
+    ("Thumbnails at Scale", "Claude Shannon", "B3"),
+    ("Accessible Video", "Margaret Hamilton", "C1"),
+    ("Panel: The Next Five Years", "Tim Berners-Lee", "C2"),
+    ("Q&A", "Barbara Liskov", "C3"),
+    ("Closing Remarks", "Donald Knuth", "K2"),
+]
+
+
+def build_batch_fixture(directory: Path) -> Dict[str, Path]:
+    """sessions.csv (title, speaker, photo, session; 10 rows, UTF-8) and one 400x400 speaker photo per row,
+    each a different solid colour so a mix-up between rows would show in the output."""
+    d = Path(directory)
+    d.mkdir(parents=True, exist_ok=True)
+    lines = ["title,speaker,photo,session"]
+    for i, (title, speaker, session) in enumerate(SESSIONS):
+        photo = d / f"speaker_{i + 1:02d}.png"
+        Image.new("RGB", (400, 400), (40 + 20 * i, 200 - 15 * i, 90 + 10 * i)).save(photo)
+        lines.append(",".join([f'"{title}"', f'"{speaker}"', str(photo).replace("\\", "/"), session]))
+    csv_path = d / "sessions.csv"
+    csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"csv": csv_path, "dir": d}
+
+
 def build_all(directory: Path) -> Dict[str, Path]:
     files = build_images(directory)
     if ffmpeg_available():

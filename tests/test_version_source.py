@@ -52,7 +52,7 @@ def test_ffmpeg_skill_dependency_is_a_lower_bound_from_the_adapter_constant():
         "version_range": f">={SUPPORTED_CONTRACT_VERSION}",
         "range_of": "contract_version",
         "required": False,
-        "for": ["thumbnail/render", "thumbnail/extract_frame"],
+        "for": ["thumbnail/render", "thumbnail/extract_frame", "thumbnail/render_batch"],
         "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED],
     }]
     assert c["dependencies"][0]["version_range"] == ">=1.0"

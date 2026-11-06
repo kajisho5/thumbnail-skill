@@ -267,4 +267,4 @@ def test_contract_declares_the_optional_ai_tool_beside_an_unchanged_core():
     assert set(bp["providers"]) == set(background.PROVIDERS)
     flux = bp["providers"]["flux2-klein-4b"]
     assert (flux["model"], flux["licence"]) == ("black-forest-labs/FLUX.2-klein-4B", "Apache-2.0")
-    assert {p["id"] for p in c["provides"]} == {"thumbnail.render", "thumbnail.extract_frame", "thumbnail.generate_background"}
+    assert {p["id"] for p in c["provides"]} == {"thumbnail.render", "thumbnail.extract_frame", "thumbnail.render_batch", "thumbnail.generate_background"}

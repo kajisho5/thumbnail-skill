@@ -252,3 +252,47 @@
   >=3.9` for use with ffmpeg-skill 2.x. CI therefore runs Python 3.9 against `v2.24.1` (it ran
   against `main`, which is 3.x now), adds `v3.0.0` on Python 3.10, and keeps `main` on 3.11
   (Linux, macOS, Windows) and `336e0c4` on 3.9.
+- **ADR-14 Batch thumbnails are their own tool, `thumbnail/render_batch`: one template per platform target, a
+  table of rows, `{{column}}` placeholders, and shrink-to-fit text that is never cut.** (`ECOSYSTEM_ROADMAP.md`
+  step 5: a conference's sessions or a series' episodes as one set of thumbnails.)
+  *Shape:* a new tool rather than a new field on `render`. `render`'s declared `input` is part of the per-tool keys
+  video-production-agent pins as fatal drift, and a batch is a different unit of work (one request, many files).
+  Each row is still an ordinary `thumbnail/render`: the batch fills the template, then calls the same code path, so
+  each file gets the same output validation (real format and size) and the same `output.preset` check (ADR-9), and
+  is cached and reused the same way.
+  *Targets:* one ThumbnailDocument template per `output.preset`, so 16:9 and 9:16 are two targets (`youtube`,
+  `youtube-shorts`), each with its own layout. A single template stretched to the other shape would put text and
+  photos where nobody placed them, which is a layout decision this skill does not make. The template's canvas may omit
+  `width`/`height`; the preset's size is used (ADR-9's precedence). At most 4 targets.
+  *Rows:* a CSV file (`csv.path`, header row, unique names, every line the header's field count, blank lines skipped,
+  at most 4 MB and 1000 rows) or inline `rows` (objects of strings, for an agent that already has the table). The
+  default encoding is UTF-8, and a leading byte-order mark is accepted (Excel writes one with "CSV UTF-8"). `cp932`
+  is an opt-in choice for a CSV saved by Japanese Excel as plain "CSV", which is Shift_JIS. It is never guessed: a
+  file that is not valid UTF-8 is refused (`INVALID_INPUT`, `csv_encoding`) with a hint to set the encoding. `;` and
+  tab delimiters are accepted for locales whose spreadsheet export uses them.
+  *Placeholders:* `{{name}}` in `document_id`, every asset `path`, every text element's `text`, and `output.name`;
+  `row` (1-based) and `preset` are built in, and a column may not use those names. Values are inserted literally and
+  never scanned again. An unknown name is `INVALID_REQUEST` (`unknown_placeholder`). Relative asset paths resolve
+  against the workspace, as they do in `render`.
+  *Text that does not fit:* `text_fit {element_id: {max_width, max_height?, min_font_size}}` per target. The font
+  size steps down by one point from the template's own size until the element's painted box fits. That box is
+  `renderer.text_box`: the layout block, the background box, and every glyph's ink with stroke and shadow. It uses
+  the same layout code that draws the text, so a measured box is the drawn box. The first size that fits is the
+  largest one, and it is used. Text is never cut, never wrapped and never enlarged. If the minimum still does not
+  fit, the row is refused with `VALIDATION_ERROR` (`text_does_not_fit`); a fitted box that lies partly outside the
+  canvas is refused too (`text_outside_canvas`), because the canvas edge would cut it. Wrapping was not chosen: where
+  a line breaks is a copy decision, and the ThumbnailDocument already takes explicit `\n`.
+  *Order:* every row and target is planned and checked first: structure, placeholders, fonts, text fit, every
+  input file, and output names (`[A-Za-z0-9._-]`, at most 128 characters, no duplicates, no existing file without
+  `overwrite`). Then files are written. A refused row therefore writes nothing. A failure while rendering (an
+  unreadable image, for example) stops the batch, and `details.written` lists the files already written.
+  *Contract:* the new tool (deterministic, delegates video frames to ffmpeg-skill like `render`), its Capability id
+  `thumbnail.render_batch` (EXPERIMENTAL), the tool in `dependencies[0].for`, and a new top-level `batch` section.
+  `document`, `execution`, `errors`, `provenance` and the existing tools' declarations are unchanged.
+  *Consumers:* checked against video-production-agent's `check_contract` and `contract_breaking_drift` with its pinned
+  `contract_0.1.11.json`: no error and no breaking drift. `contract_drift` reports `tools thumbnail/render_batch:
+  installed but not pinned`, which is informational. The agent does not call the tool until it re-pins.
+  *Tests:* `tests/test_batch.py`. A 10-row CSV with two targets writes 20 files at the platform sizes. Each file
+  passes the preset check in the response and again when the test opens it. The long title is shrunk to the largest
+  size that fits, a minimum it cannot reach is refused before anything is written, and the tests also cover cp932,
+  the UTF-8 BOM, the refusals and the CLI.

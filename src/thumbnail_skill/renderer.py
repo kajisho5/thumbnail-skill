@@ -7,7 +7,8 @@ field of a ThumbnailElement (model.py). Elements are drawn in z_index order (tie
 position in the document, stable sort) so the caller's stacking is the only stacking that happens."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import math
+from typing import Any, Dict, List, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -98,14 +99,17 @@ def _measure_lines(draw: "ImageDraw.ImageDraw", lines: List[str], font: "ImageFo
     return widths, line_h, ascent, descent
 
 
-def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: ResolvedFont) -> None:
-    draw = ImageDraw.Draw(canvas)
-    font = ImageFont.truetype(font_file.path, content.font_size, index=font_file.index)
+def load_font(content: TextContent, font_file: ResolvedFont) -> "ImageFont.FreeTypeFont":
+    return ImageFont.truetype(font_file.path, content.font_size, index=font_file.index)
+
+
+def _layout(draw: "ImageDraw.ImageDraw", content: TextContent, font: "ImageFont.FreeTypeFont") -> Tuple[List[str], List[int], int, float, float, int, int, List[Tuple[float, float]]]:
+    """Where every line of a text element goes: the one layout both drawing and measuring use, so a
+    measured box is exactly the box that is drawn."""
     lines = content.text.split("\n")
-    widths, line_h, ascent, descent = _measure_lines(draw, lines, font, content.line_spacing)
+    widths, line_h, _, _ = _measure_lines(draw, lines, font, content.line_spacing)
     block_w = max(widths) if widths else 0
     block_h = line_h * len(lines)
-
     ax, ay = content.position.x, content.position.y
     if content.align.horizontal == "center":
         ax -= block_w / 2
@@ -115,6 +119,44 @@ def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: Re
         ay -= block_h / 2
     elif content.align.vertical == "bottom":
         ay -= block_h
+    origins: List[Tuple[float, float]] = []
+    for i in range(len(lines)):
+        lx = ax
+        if content.align.horizontal == "center":
+            lx = ax + (block_w - widths[i]) / 2
+        elif content.align.horizontal == "right":
+            lx = ax + (block_w - widths[i])
+        origins.append((lx, ay + i * line_h))
+    return lines, widths, line_h, ax, ay, block_w, block_h, origins
+
+
+def text_box(content: TextContent, font_file: ResolvedFont) -> Tuple[int, int, int, int]:
+    """The canvas rectangle (x0, y0, x1, y1; x1/y1 exclusive) a text element can paint: the union of its
+    layout block, its background box, and every glyph's ink including stroke and shadow, rounded
+    outward to whole pixels. Measured with the same layout and font as `draw_text_element`, so nothing
+    the element draws falls outside it."""
+    draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    font = load_font(content, font_file)
+    lines, _, _, ax, ay, block_w, block_h, origins = _layout(draw, content, font)
+    boxes = [(ax, ay, ax + block_w, ay + block_h)]
+    if content.background is not None:
+        pad = content.background.padding
+        boxes.append((round(ax - pad), round(ay - pad), round(ax + block_w + pad) + 1, round(ay + block_h + pad) + 1))
+    stroke = content.stroke.width if content.stroke is not None else 0
+    for ln, (lx, ly) in zip(lines, origins):
+        if not ln:
+            continue
+        boxes.append(draw.textbbox((lx, ly), ln, font=font, stroke_width=stroke))
+        if content.shadow is not None:
+            boxes.append(draw.textbbox((lx + content.shadow.offset_x, ly + content.shadow.offset_y), ln, font=font))
+    return (math.floor(min(b[0] for b in boxes)), math.floor(min(b[1] for b in boxes)),
+            math.ceil(max(b[2] for b in boxes)), math.ceil(max(b[3] for b in boxes)))
+
+
+def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: ResolvedFont) -> None:
+    draw = ImageDraw.Draw(canvas)
+    font = load_font(content, font_file)
+    lines, _, _, ax, ay, block_w, block_h, origins = _layout(draw, content, font)
 
     if content.background is not None:
         pad = content.background.padding
@@ -122,18 +164,11 @@ def draw_text_element(canvas: "Image.Image", content: TextContent, font_file: Re
         overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
         ImageDraw.Draw(overlay).rectangle(box, fill=_hex_color(content.background.color))
         canvas.alpha_composite(_apply_opacity(overlay, content.opacity))
-        draw = ImageDraw.Draw(canvas)
 
     text_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     tdraw = ImageDraw.Draw(text_layer)
     fill = _hex_color(content.color)
-    for i, ln in enumerate(lines):
-        lx = ax
-        if content.align.horizontal == "center":
-            lx = ax + (block_w - widths[i]) / 2
-        elif content.align.horizontal == "right":
-            lx = ax + (block_w - widths[i])
-        ly = ay + i * line_h
+    for ln, (lx, ly) in zip(lines, origins):
         if content.shadow is not None:
             tdraw.text((lx + content.shadow.offset_x, ly + content.shadow.offset_y), ln, font=font, fill=_hex_color(content.shadow.color))
         if content.stroke is not None and content.stroke.width > 0:
@@ -162,4 +197,4 @@ def render_document(document: ThumbnailDocument, images: Dict[str, "Image.Image"
     return canvas
 
 
-__all__ = ["render_document", "draw_image_element", "draw_text_element"]
+__all__ = ["render_document", "draw_image_element", "draw_text_element", "text_box", "load_font"]
