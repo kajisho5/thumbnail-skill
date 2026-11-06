@@ -68,6 +68,11 @@ jobs:
           git -C vendor/ffmpeg-skill checkout "${{ matrix.ffmpeg_skill }}"
           git -C vendor/ffmpeg-skill log --oneline -1
         shell: bash
+      - name: Fetch qc-skill main (the variants' contrast check, ADR-16)
+        run: |
+          git clone --depth 1 https://github.com/kajisho5/qc-skill vendor/qc-skill
+          git -C vendor/qc-skill log --oneline -1
+        shell: bash
       - run: ffprobe -version
         shell: bash
       - run: python -m pip install -e . pytest pyflakes
@@ -75,6 +80,7 @@ jobs:
       - run: python -m pytest -q
         env:
           THUMBNAIL_SKILL_FFMPEG_SKILL_DIR: ${{ github.workspace }}/vendor/ffmpeg-skill
+          THUMBNAIL_SKILL_QC_SKILL_DIR: ${{ github.workspace }}/vendor/qc-skill
       - run: thumbnail doctor --json --ffmpeg-skill vendor/ffmpeg-skill
         shell: bash
       - run: thumbnail skill --json > contract.json

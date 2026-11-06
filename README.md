@@ -89,6 +89,8 @@ subprocess it starts is ffmpeg-skill's own CLI, with typed argv, exactly the way
 thumbnail doctor --json                        # fonts, ffmpeg-skill, path policy, output formats
 thumbnail validate request.json --json         # structural check only; no file system, no font, no ffmpeg-skill
 thumbnail render request.json --json           # canvas + assets + elements -> PNG/JPEG
+thumbnail render request.json --variants 3 --json
+                                                # 3 documented variants (<stem>-v1..v3), each checked at phone size
 thumbnail extract-frame request.json --json    # one video timestamp -> one frame, nothing else
 thumbnail render-batch request.json --json     # one template per platform target + a CSV -> one thumbnail per row and target
 thumbnail choose-frame request.json --json     # rank sampled frames by measured facts (detection-skill faces)
@@ -298,6 +300,23 @@ layout. `{{column}}` placeholders are filled from the row (`row` and `preset` ar
   input files, and safe and unique output names. Each file is then an ordinary `thumbnail/render`,
   with its output check and `output.preset` check.
 
+## A/B variants and the small-size check
+
+`thumbnail render request.json --variants N` (tool `thumbnail/render_variants`, ADR-16; roadmap step 7)
+writes N variants of one thumbnail, `<stem>-v1` .. `<stem>-vN`, for a platform A/B test. Variant k
+takes the k-th entry, round robin, of three axes: the title's layout, its palette (colour, band,
+outline) and, optionally, the frame an image element shows. Variant 1 is always the document as
+given. Every choice is listed in the response. An optional `variants` object in the request sets
+the axes (`layouts`, `palettes`, `frame_element` + `frames`), `text_element`, `phone_width` (320),
+`min_text_height_px` (12) and `min_contrast_ratio` (4.5).
+
+Each variant is checked at the size it is seen on a phone. For every text element the response gives
+its glyph ink height scaled to 320 px wide and its contrast ratio, measured by qc-skill's text
+legibility (`video.text_regions`, WCAG 2.x). A variant below a minimum is reported
+(`small_size.status: fail`, `text_too_small` / `low_contrast`, listed in `flagged`) and still
+written. Nothing is dropped and nothing picks a winner. Without qc-skill (`--qc-skill`,
+`THUMBNAIL_SKILL_QC_SKILL_DIR`, or `vendor/qc-skill`), contrast is reported as not measured.
+
 ## Frame choice and face-aware text
 
 Two tools (ADR-15; roadmap step 6) that detect nothing themselves and write no file:
@@ -365,7 +384,7 @@ preset's name.
 
 `skill --json` (alias `contract --json`) also publishes `provides`: `render` as Capability
 id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame`, `render_batch` as
-`thumbnail.render_batch`, the optional
+`thumbnail.render_batch`, `render_variants` as `thumbnail.render_variants`, the optional
 `generate_background` as `thumbnail.generate_background` — the identifiers a
 registry (see `kajisho5/AI-video-production-OS`) can resolve to this Skill without
 hardcoding it. `validate` has no Capability id — it produces no output artifact, only a

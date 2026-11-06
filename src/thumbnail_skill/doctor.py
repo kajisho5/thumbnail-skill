@@ -58,6 +58,14 @@ def doctor_report(ffmpeg_skill_dir: Optional[str] = None, workspace: Optional[st
             warnings.append(f"background provider {pid!r} is configured ({st['configure_env']}) but cannot run: " + "; ".join(st.get("problems") or [])
                             + " (thumbnail/generate_background will be refused; render and extract_frame are unaffected)")
 
+    # qc-skill (ADR-16): only the variants' contrast check uses it; not finding it changes no status
+    from .qcskill import ENV_DIR_KEY, QcSkill
+    try:
+        checks["qc_skill"] = {"status": "ok", "location": QcSkill.locate().describe(), "role": "contrast of thumbnail/render_variants' text (video.text_regions)"}
+    except ThumbnailError as e:
+        checks["qc_skill"] = {"status": "not_found", "tried": e.details.get("tried"), "configure_env": ENV_DIR_KEY,
+                              "impact": "thumbnail/render_variants reports contrast as not measured; everything else is unaffected"}
+
     checks["element_types"] = list(ELEMENT_TYPES)
     checks["output_formats"] = {f: {"status": "ok", "extensions": list(s["extensions"])} for f, s in OUTPUT_FORMATS.items()}
 

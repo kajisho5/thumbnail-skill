@@ -13,7 +13,9 @@ Tools: `thumbnail/validate` (structural check only), `thumbnail/render` (canvas 
 -> PNG/JPEG), `thumbnail/extract_frame` (one video timestamp -> one frame, nothing else),
 `thumbnail/render_batch` (one template per `output.preset` plus a CSV or inline rows -> one thumbnail
 per row and target; `{{column}}` placeholders; `text_fit` shrinks a name down to `min_font_size`,
-never cuts it; nothing is written until every row is checked), `thumbnail/choose_frame` (ranks a
+never cuts it; nothing is written until every row is checked), `thumbnail/render_variants`
+(`thumbnail render req.json --variants N`: N documented variants, each checked at 320 px wide for text
+height and, through qc-skill, contrast; a failing variant is flagged and kept), `thumbnail/choose_frame` (ranks a
 detection-skill `detections@1` face document's frames by eyes open, sharpness, exposure, angle and
 size; closed eyes rank last; detects nothing itself), `thumbnail/place_text` (moves one text
 element to the first position clear of every face; refuses rather than cover one), and the
