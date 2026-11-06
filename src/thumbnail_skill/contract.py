@@ -36,6 +36,20 @@ TOOLS: List[Dict[str, Any]] = [
      "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
      "idempotency_hint": "same source content + same timestamp + same skill/engine version reuses the cached artifact",
      "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes the output file", "writes a reuse cache entry under the workspace"]},
+    {"tool_id": "thumbnail/render_batch", "role": "execution",
+     "description": "Render one thumbnail per row of a table (a CSV file or inline rows) and per platform target, from one ThumbnailDocument "
+                    "template per target with {{column}} placeholders. Named text elements are shrunk to fit a caller-given box, down to a stated "
+                    "minimum font size, never cut or wrapped; a row that does not fit is refused. Every row is checked before anything is written; "
+                    "each file then goes through thumbnail/render, with its output check and its output.preset check.",
+     "input": {"csv": {"path": "file", "encoding": "utf-8 (default) | cp932", "delimiter": "',' (default) | ';' | tab"}, "rows": "[{column: string}] (instead of csv)",
+               "targets": "[{preset, document: ThumbnailDocument template, text_fit?: {element_id: {max_width, max_height?, min_font_size}}}]",
+               "output": {"directory": "path", "name": "template, default {{row}}-{{preset}}", "format": "png|jpeg", "overwrite": "bool", "jpeg_quality": "int (jpeg)"},
+               "options": "RenderOptions"},
+     "output": {"items": "[{row, preset, output, format, width, height, size, sha256, reused, preset_check, fitted}]", "count": "int", "rows": "int",
+                "targets": "[preset]", "provenance": "object"},
+     "produces_output": True, "writes_media": True, "deterministic": True, "mutates_input": False,
+     "idempotency_hint": "each file is a thumbnail/render and is reused from its cache the same way",
+     "delegates_to": ["ffmpeg-skill/probe", "ffmpeg-skill/look"], "side_effects": ["writes one output file per row and target", "writes reuse cache entries under the workspace"]},
     {"tool_id": "thumbnail/generate_background", "role": "execution",
      "description": "Optional (ADR-12): generate one background image from a caller-written prompt and an explicit seed with a named, locally "
                     "installed AI provider (FLUX.2 [klein] 4B), as a validated PNG/JPEG with provenance (engine, model, licence). Never decides what "
@@ -62,6 +76,7 @@ TOOLS: List[Dict[str, Any]] = [
 CAPABILITY_IDS: Dict[str, str] = {
     "thumbnail/render": "thumbnail.render",
     "thumbnail/extract_frame": "thumbnail.extract_frame",
+    "thumbnail/render_batch": "thumbnail.render_batch",
     "thumbnail/generate_background": "thumbnail.generate_background",
 }
 
@@ -120,6 +135,31 @@ def platform_presets() -> Dict[str, Any]:
     }
 
 
+def batch() -> Dict[str, Any]:
+    """`thumbnail/render_batch` (ADR-14): a new top-level key; nothing a consumer already pins changes shape."""
+    from .batch import BUILTIN_FIELDS, CSV_DELIMITERS, CSV_ENCODINGS, DEFAULT_NAME, MAX_CELL_LENGTH, MAX_CSV_BYTES, MAX_ROWS, MAX_TARGETS, NAME_RE
+    return {
+        "tool": "thumbnail/render_batch",
+        "placeholders": {"syntax": "{{column}}", "replaced_in": ["document.document_id", "document.assets[].path", "document.elements[].text.text", "output.name"],
+                         "built_in": list(BUILTIN_FIELDS), "unknown": "INVALID_REQUEST (reason unknown_placeholder)",
+                         "values": "inserted literally, never re-scanned; relative asset paths resolve against the workspace, as in thumbnail/render"},
+        "csv": {"header": "first row, unique non-empty names", "encodings": list(CSV_ENCODINGS), "default_encoding": "utf-8",
+                "encoding_note": "utf-8 accepts a leading byte-order mark; cp932 is the opt-in choice for a CSV saved by Japanese Excel",
+                "delimiters": list(CSV_DELIMITERS), "max_bytes": MAX_CSV_BYTES, "blank_lines": "skipped", "field_count": "must equal the header's"},
+        "limits": {"rows": MAX_ROWS, "targets": MAX_TARGETS, "cell_chars": MAX_CELL_LENGTH},
+        "targets": "one per output.preset; the template's canvas may omit width/height (the preset's size is used); 16:9 and 9:16 are two targets "
+                   "(for example youtube and youtube-shorts), each with its own layout",
+        "text_fit": {"rule": "the largest font size from the template's own size down to min_font_size at which the element's painted box (layout block, "
+                             "background, ink with stroke and shadow) fits max_width x max_height and lies inside the canvas",
+                     "never": ["cut", "wrap", "enlarge"], "does_not_fit": "VALIDATION_ERROR (reason text_does_not_fit), before anything is written",
+                     "outside_canvas": "VALIDATION_ERROR (reason text_outside_canvas)"},
+        "output_name": {"default": DEFAULT_NAME, "pattern": NAME_RE.pattern, "duplicates": "INVALID_REQUEST (reason duplicate_name)"},
+        "order": "every row and target is planned and checked first (structure, placeholders, fonts, text fit, input files, output names); then each is "
+                 "rendered with thumbnail/render; a failure while rendering stops the batch and lists the files already written (details.written)",
+        "decision": "docs/decisions.md ADR-14",
+    }
+
+
 def background_providers() -> Dict[str, Any]:
     """The optional AI background providers (ADR-12): a new top-level key beside the core sections, which keep describing
     the deterministic render path (`execution.ai` false, `deterministic` true) exactly as consumers pin them."""
@@ -163,6 +203,7 @@ def skill_contract() -> Dict[str, Any]:
                      "elements": {"types": list(ELEMENT_TYPES), "max_elements": MAX_ELEMENTS, "stacking": "z_index, ties broken by document order", **element_specs()}},
         "output_formats": {f: {"extensions": list(s["extensions"]), "lossless": s["lossless"]} for f, s in OUTPUT_FORMATS.items()},
         "platform_presets": platform_presets(),
+        "batch": batch(),
         "background_providers": background_providers(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
@@ -188,4 +229,4 @@ def skill_contract() -> Dict[str, Any]:
 
 
 __all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets",
-           "background_providers"]
+           "background_providers", "batch"]

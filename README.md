@@ -90,6 +90,7 @@ thumbnail doctor --json                        # fonts, ffmpeg-skill, path polic
 thumbnail validate request.json --json         # structural check only; no file system, no font, no ffmpeg-skill
 thumbnail render request.json --json           # canvas + assets + elements -> PNG/JPEG
 thumbnail extract-frame request.json --json    # one video timestamp -> one frame, nothing else
+thumbnail render-batch request.json --json     # one template per platform target + a CSV -> one thumbnail per row and target
 thumbnail generate-background request.json --json
                                                 # optional: one AI background image from a configured provider (ADR-12)
 thumbnail skill --json                         # the machine-readable contract (source of truth)
@@ -262,6 +263,39 @@ ffmpeg-skill's own `content_equivalent` convention for environment-dependent enc
 | `CANCELLED` | interrupted by signal |
 | `INTERNAL_ERROR` | a bug in this skill |
 
+## Batch thumbnails from a CSV
+
+`thumbnail/render_batch` (ADR-14; roadmap step 5) renders one thumbnail per row of a table and per
+platform target: every session of a conference, every episode of a series. Each target is one
+ThumbnailDocument template for one `output.preset`. 16:9 and 9:16 are two targets, each with its own
+layout. `{{column}}` placeholders are filled from the row (`row` and `preset` are built in).
+
+```json
+{"tool": "thumbnail/render_batch", "params": {
+  "csv": {"path": "sessions.csv"},
+  "targets": [
+    {"preset": "youtube",
+     "document": {"document_id": "talk-{{session}}", "canvas": {"background": "#14213D"},
+                  "assets": [{"asset_id": "photo", "kind": "image", "path": "{{photo}}"}],
+                  "elements": [
+                    {"element_id": "photo_el", "type": "image", "image": {"asset_id": "photo", "position": {"x": 840, "y": 140}, "size": {"width": 400, "height": 400}}},
+                    {"element_id": "title", "type": "text", "text": {"text": "{{title}}", "font_id": "sans-bold", "font_size": 72, "color": "#FFFFFF", "position": {"x": 40, "y": 600}}}]},
+     "text_fit": {"title": {"max_width": 1200, "max_height": 110, "min_font_size": 24}}},
+    {"preset": "youtube-shorts", "document": {"...": "the 9:16 layout"}}],
+  "output": {"directory": "thumbs", "name": "{{session}}-{{preset}}", "format": "png"}}}
+```
+
+- **CSV:** header row, UTF-8 by default (a byte-order mark is fine). For a CSV saved by Japanese Excel
+  as plain "CSV" (Shift_JIS), set `"encoding": "cp932"`; it is never guessed. `"delimiter"` may be
+  `;` or a tab. Inline `rows` (objects of strings) can replace the file. At most 1000 rows.
+- **Names that do not fit** are shrunk one point at a time, down to `min_font_size`, until the
+  element's painted box (text, stroke, shadow, background) fits `max_width` x `max_height` and stays
+  on the canvas. They are never cut or wrapped. A name that does not fit even at the minimum is
+  refused (`VALIDATION_ERROR`, `text_does_not_fit`). The response's `fitted` gives the size used.
+- **Nothing is written** until every row and target has been checked: placeholders, fonts, text fit,
+  input files, and safe and unique output names. Each file is then an ordinary `thumbnail/render`,
+  with its output check and `output.preset` check.
+
 ## Optional AI background
 
 `thumbnail/generate_background` (ADR-12 in [docs/decisions.md](docs/decisions.md); roadmap step 3)
@@ -306,7 +340,8 @@ preset's name.
 ## Cross-repository Capability ids
 
 `skill --json` (alias `contract --json`) also publishes `provides`: `render` as Capability
-id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame`, the optional
+id `thumbnail.render`, `extract_frame` as `thumbnail.extract_frame`, `render_batch` as
+`thumbnail.render_batch`, the optional
 `generate_background` as `thumbnail.generate_background` — the identifiers a
 registry (see `kajisho5/AI-video-production-OS`) can resolve to this Skill without
 hardcoding it. `validate` has no Capability id — it produces no output artifact, only a
