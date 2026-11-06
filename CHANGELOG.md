@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.13 (2026-11-06)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Frame choice and face-aware layout (roadmap step 6) (#26) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.12...v0.1.13
+
+
 ## v0.1.12 (2026-11-06)
 
 ## What's Changed
