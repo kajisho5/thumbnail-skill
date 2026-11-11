@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.16 (2026-11-11)
+
+## What's Changed
+
+## 🐛 Bug Fixes
+
+* fix(release): Dependabot labels cannot raise the release level (#29) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* fix(release): Dependabot labels cannot raise the release level (#29) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.15...v0.1.16
+
+
 ## v0.1.15 (2026-11-06)
 
 ## What's Changed
