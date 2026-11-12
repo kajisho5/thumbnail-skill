@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.17 (2026-11-12)
+
+## What's Changed
+
+## 📝 Documentation
+
+* docs(roadmap): kit@1 brand kit reader and the generative-media ADR note (#30) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.16...v0.1.17
+
+
 ## v0.1.16 (2026-11-11)
 
 ## What's Changed
