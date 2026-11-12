@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.1.9, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3), batch from a CSV (step 5), choose_frame and place_text (step 6), render --variants with the small-size check (step 7), render --layers (step 8). CI on 3 OSes.
+0.1.16, version single-sourced (step 1). Python + Pillow. validate, render (ThumbnailDocument), extract_frame, platform presets (step 2), optional generate_background (step 3), batch from a CSV (step 5), choose_frame and place_text (step 6), render --variants with the small-size check (step 7), render --layers (step 8). CI on 3 OSes. Colours, font and logo come per document; there is no brand kit input yet (step 9).
 
 ## What this repository owns
 
@@ -17,7 +17,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Wiring
 
-Agent uses extract_frame and render with the full ThumbnailDocument: up to four texts, a logo, colours (step 4, video-production-agent#100). Pinned at 0.1.8. Delegates to ffmpeg-skill probe, look.
+Agent uses extract_frame and render with the full ThumbnailDocument: up to four texts, a logo, colours (step 4, video-production-agent#100). Pinned at 0.1.16 today (first at 0.1.8). Delegates to ffmpeg-skill probe, look.
 
 ## Steps
 
@@ -45,10 +45,15 @@ Agent uses extract_frame and render with the full ThumbnailDocument: up to four 
   - なぜ要るか：デザイナーが文字だけ直したいときに、最初から作り直さずに済む
   - Done when: the layers composited by the manifest equal the thumbnail pixel for pixel
   - Done (ADR-17): `thumbnail render --layers DIR` (`thumbnail/render_layers`) records the renderer's own composites. It writes the background, each image (photo, logo) and each text, with its background band as a separate layer, as a PNG with alpha cropped to its pixels, plus `layers.json` (order, role, element id, position, size). Before answering it rebuilds the image from the files on disk and checks it against the thumbnail. `tests/test_layers.py` rebuilds with its own code and gets the written PNG byte for byte, with opacity, rotation, negative positions, stroke and shadow; for JPEG it compares against the lossless composite ([#28](https://github.com/kajisho5/thumbnail-skill/pull/28))
+- [ ] **9. Brand kit reader (`kit@1`)** — `render`, `render_batch` and `render_variants` take a brand kit in the Velisa `kit@1` shape (a superset of ffmpeg-skill `brand.json`: colours, font and font file, logo) and map it onto the ThumbnailDocument's existing colours, font and logo by the mapping table in the Velisa spec; the values used are written in the result. A value stated in the document wins over the kit; a kit key the document cannot use is reported, not dropped silently. `render_variants`' palettes are drawn from the kit's colours when one is given. [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O5)
+  - Why: thumbnails come out in the same colours, font and logo as the titles and lower thirds of the same programme（なぜ要るか：サムネイルを番組のテロップと同じブランドで揃えられる）
+  - Done when: a `kit@1` fixture renders a thumbnail whose sampled text and band colours and reported font match the kit; the same document with an explicit colour keeps that colour; three variants with a kit use only the kit's colours
 
 ## Boundaries
 
 imagemagick `preset youtube-thumbnail` and remotion `still` can also produce thumbnails; ownership stays here.
+
+Note, not a step: under the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O7) no generative-media skill is created yet; an ADR in Velisa comes first (candidate engines, code and weight licences, VRAM, commercial terms). That ADR is to decide whether this skill's `BackgroundProvider` interface (`background.py`: one provider today, `flux2-klein-4b`, local weights only, a required seed, licence in the provenance) can be reused for generated images. Nothing changes here until that ADR is merged.
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (3.x, 42 tools, contract_version 2.0; treated as complete, proposals go to Velisa's ROADMAP). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
