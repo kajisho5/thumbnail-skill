@@ -254,7 +254,8 @@ def kit() -> Dict[str, Any]:
         "logo": {"element_id": LOGO_ID, "positions": list(LOGO_POSITIONS), "size": "logo_scale px wide, the image's aspect ratio", "margin": "safe_margin from the edges",
                  "opacity": "logo_opacity when stated, else this skill's default 1.0"},
         "variants": {"palettes": "when variants.palettes is not given: kit-text-on-background-band, kit-background-on-primary-band, kit-text-with-outline, "
-                                 "kit-primary-with-outline, each only when the kit states its two colours",
+                                 "kit-primary-with-outline, each only when the kit states its two colours; with one colour, kit-<role> (that colour alone); "
+                                 "with none, INVALID_REQUEST (kit_without_colors): this skill's default palettes are not used with a kit",
                      "padding": PALETTE_PADDING, "stroke_width": PALETTE_STROKE_WIDTH, "layout_numbers": "this skill's variant defaults, not the kit's"},
         "unmapped": dict(NO_COUNTERPART),
         "invalid": {"code": "INVALID_INPUT", "reason": "bad_kit", "when": "a value that maps is malformed or out of range, an unknown schema, both colors and colours"},

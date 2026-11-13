@@ -461,7 +461,9 @@
   (the remotion spelling) is read as `colors`.
   *Variants:* with a kit and no `variants.palettes`, the palette axis is drawn from the kit's colours only:
   text on a background band, background on a primary band (ffmpeg-skill's chapter look), text with an outline, primary
-  with an outline, each only when the kit states both of its colours. The band padding (16) and stroke width (4) are
+  with an outline, each only when the kit states both of its colours. A kit with one of these colours gives
+  `kit-<role>` (the text in that colour alone); a kit with none is refused (`INVALID_REQUEST`, `kit_without_colors`),
+  because this skill's default palettes are not the kit's colours. The band padding (16) and stroke width (4) are
   this skill's variant defaults (ADR-16), not kit values. Palettes the caller gives win.
   *Consistency:* motion-graphics-skill's `options.kit` (its ADR-31) has the same shape: a path in `options`, the
   spec's table applied exactly, only stated values passed on, and `response.kit.unmapped` with reasons.

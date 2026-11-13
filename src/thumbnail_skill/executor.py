@@ -150,9 +150,9 @@ class Executor:
                 palettes = app.take_palettes()
                 if palettes:
                     params["variants"] = dict(v or {}, palettes=palettes)
-                else:
-                    self.warnings.append("kit: no palette could be drawn from the kit's colours (each needs two of text, background, primary, outline); "
-                                         "render_variants uses its default palettes")
+                else:   # this skill's default palettes are not the kit's colours, so they are not used either
+                    raise ThumbnailError("INVALID_REQUEST", "the kit states none of colors.text / primary / background / outline, so no variant palette can "
+                                         "be drawn from it; give variants.palettes", {"field": "variants.palettes", "reason": "kit_without_colors"})
         if not app.kit.placeholder:
             unmapped, _unused = app.unmapped_and_unused()
             for u in unmapped:

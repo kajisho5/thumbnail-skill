@@ -294,3 +294,25 @@ def test_contract_declares_the_kit_block_and_leaves_the_rest():
     assert "font_file" in k["unmapped"] and k["decision"] == "docs/decisions.md ADR-18"
     render_tool = next(t for t in c["tools"] if t["tool_id"] == "thumbnail/render")
     assert render_tool["input"] == {"document": "ThumbnailDocument", "output": "OutputSpec", "options": "RenderOptions"}
+
+
+def test_variants_with_a_one_colour_kit_stay_in_the_kit(media, workspace):
+    kit = kit_file(workspace / "brand", media, colors={"text": "F4F1E8"})
+    res = render({"document": doc(band=False), "output": {"path": "thumb.png", "format": "png", "preset": "youtube"}, "options": {"kit": str(kit)},
+                  "variants": {"count": 2}}, workspace, "thumbnail/render_variants")
+    assert res["ok"] is True, res
+    assert res["axes"]["palettes"] == ["as-given", "kit-text"] and res["variants"][1]["choices"]["palette"] == "kit-text"
+    kit = kit_file(workspace / "brand2", media, colors=...)
+    res = render({"document": doc(title_color="#FFFFFF", band=False), "output": {"path": "t2.png", "format": "png", "preset": "youtube"}, "options": {"kit": str(kit)},
+                  "variants": {"count": 2}}, workspace, "thumbnail/render_variants")
+    assert res["ok"] is False and res["error"]["details"]["reason"] == "kit_without_colors"
+
+
+def test_the_logo_goes_above_a_float_z_index(media, workspace):
+    kit = kit_file(workspace / "brand", media)
+    document = doc()
+    document["elements"][0]["z_index"] = 5.0
+    res = render({"document": document, "output": {"path": "thumb.png", "format": "png", "preset": "youtube"}, "options": {"kit": str(kit)},
+                  "layers": {"directory": "layers"}}, workspace, "thumbnail/render_layers")
+    assert res["ok"] is True, res
+    assert [x["element_id"] for x in res["layers"]["layers"]][-1] == "kit-logo"

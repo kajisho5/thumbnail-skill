@@ -286,7 +286,8 @@ class KitApplication:
         size = (scale, max(1, int(round(scale * lh / lw))))
         margin = int(round(k.data["safe_margin"]))
         x, y = logo_box(k.data["logo_position"], margin, canvas, size)
-        z = max([int(e.get("z_index", 0)) for e in doc["elements"] if isinstance(e, dict) and isinstance(e.get("z_index", 0), int)] + [0]) + 1
+        zs = [e.get("z_index", 0) for e in doc["elements"] if isinstance(e, dict)]
+        z = max([int(v) for v in zs if isinstance(v, (int, float)) and not isinstance(v, bool) and float(v).is_integer()] + [0]) + 1
         image: Dict[str, Any] = {"asset_id": LOGO_ID, "position": {"x": x, "y": y}, "size": {"width": size[0], "height": size[1]}, "fit": "contain"}
         if k.stated("logo_opacity"):
             image["opacity"] = k.data["logo_opacity"]
@@ -313,6 +314,8 @@ class KitApplication:
             out.append({"name": "kit-text-with-outline", "color": c["text"], "stroke": {"color": c["outline"], "width": PALETTE_STROKE_WIDTH}, "uses": ["colors.text", "colors.outline"]})
         if c.get("primary") and c.get("outline"):
             out.append({"name": "kit-primary-with-outline", "color": c["primary"], "stroke": {"color": c["outline"], "width": PALETTE_STROKE_WIDTH}, "uses": ["colors.primary", "colors.outline"]})
+        if not out:   # a kit with one usable colour: the text in that colour alone, never a colour from outside the kit
+            out = [{"name": f"kit-{role}", "color": c[role], "uses": [f"colors.{role}"]} for role in ("text", "primary", "background", "outline") if c.get(role)]
         return out
 
     def take_palettes(self) -> Optional[List[Dict[str, Any]]]:
