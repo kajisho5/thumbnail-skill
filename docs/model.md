@@ -95,6 +95,7 @@ before it is cached or placed; any violation is `VALIDATION_ERROR`, `details.rea
 | `reuse` | bool | default true |
 | `timeout` | 1..3600 seconds | default 120; per ffmpeg-skill invocation |
 | `ffmpeg_skill` | directory \| null | explicit ffmpeg-skill checkout, overriding the environment-variable/well-known-path discovery |
+| `kit` | file \| absent | a Velisa `kit@1` brand kit (or an ffmpeg-skill `brand.json`) for `render`, `render_layers`, `render_variants`, `render_batch`: fills the colours, font and logo the document leaves out (ADR-18, README "Brand kit"); `validate` does not read it |
 
 ## What is deliberately not a field
 

@@ -237,6 +237,36 @@ def variants() -> Dict[str, Any]:
     }
 
 
+def kit() -> Dict[str, Any]:
+    """`options.kit` (ADR-18): a new top-level key. The tools' declared inputs and outputs are unchanged: `kit` is a
+    field of RenderOptions and `response.kit` an added key, both documented here."""
+    from .kit import KIT_SCHEMA, KIT_TOOLS, LOGO_ID, LOGO_POSITIONS, MAPPING, MAX_KIT_BYTES, NO_COUNTERPART, PALETTE_PADDING, PALETTE_STROKE_WIDTH
+    return {
+        "schema": KIT_SCHEMA, "field": "options.kit", "cli": "thumbnail render request.json --kit kit.json --json", "tools": list(KIT_TOOLS),
+        "spec": "Velisa docs/specs/kit.md: a superset of ffmpeg-skill brand.json; every brand.json is a kit",
+        "file": {"format": "UTF-8 JSON object", "max_bytes": MAX_KIT_BYTES, "paths": "logo (and font_file) relative to the kit file",
+                 "policy": "the kit file and its logo are inputs under the request's path policy (allowed_input_roots)",
+                 "colours": "RRGGBB without '#' (this skill adds the '#'); `colours` is read as `colors`; null is not stated"},
+        "mapping": [dict(m) for m in MAPPING],
+        "precedence": "a value stated in the document wins over the kit and is listed in kit.kept; the kit fills only slots the document leaves out",
+        "not_filled": "nothing the kit leaves out is filled in: ffmpeg-skill's brand.json defaults are not used; a slot neither gives stays as it is "
+                      "(a text element without color or font_id is still INVALID_REQUEST)",
+        "logo": {"element_id": LOGO_ID, "positions": list(LOGO_POSITIONS), "size": "logo_scale px wide, the image's aspect ratio", "margin": "safe_margin from the edges",
+                 "opacity": "logo_opacity when stated, else this skill's default 1.0"},
+        "variants": {"palettes": "when variants.palettes is not given: kit-text-on-background-band, kit-background-on-primary-band, kit-text-with-outline, "
+                                 "kit-primary-with-outline, each only when the kit states its two colours; with one colour, kit-<role> (that colour alone); "
+                                 "with none, INVALID_REQUEST (kit_without_colors): this skill's default palettes are not used with a kit",
+                     "padding": PALETTE_PADDING, "stroke_width": PALETTE_STROKE_WIDTH, "layout_numbers": "this skill's variant defaults, not the kit's"},
+        "unmapped": dict(NO_COUNTERPART),
+        "invalid": {"code": "INVALID_INPUT", "reason": "bad_kit", "when": "a value that maps is malformed or out of range, an unknown schema, both colors and colours"},
+        "result": {"response.kit": "{schema, read, file {path, sha256, size}, name, colors, applied [{target, value, from}], kept [{target, value, kit_key, kit_value}], "
+                                   "unmapped [{key, reason}], unused [{key, reason}], font? {kit, font_id, family, style, path, font_file_hash}, logo?, palettes?}",
+                   "provenance.kit": "{schema, path, sha256}", "warnings": "one per unmapped key",
+                   "validate": "validation.kit {read: false, slots}: validate touches no file, so the kit is not read"},
+        "decision": "docs/decisions.md ADR-18",
+    }
+
+
 def frame_choice() -> Dict[str, Any]:
     """`thumbnail/choose_frame` and `thumbnail/place_text` (ADR-15): a new top-level key."""
     from .frames import DEFAULT_MARGIN, DETECTIONS_SCHEMA, EYES_CLOSED_BELOW, SHARPNESS_HALF, SIZE_FULL, WEIGHTS
@@ -330,6 +360,7 @@ def skill_contract() -> Dict[str, Any]:
         "frame_choice": frame_choice(),
         "variants": variants(),
         "layered_output": layered_output(),
+        "kit": kit(),
         "background_providers": background_providers(),
         "fonts": {"font_ids": font_ids(), "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths "
                   "(fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
@@ -355,4 +386,4 @@ def skill_contract() -> Dict[str, Any]:
 
 
 __all__ = ["CONTRACT_SCHEMA_ID", "TOOLS", "FFMPEG_SKILL_CONTRACT_RANGE", "skill_contract", "element_specs", "capability_provides", "dependencies", "platform_presets",
-           "background_providers", "batch", "frame_choice", "variants", "layered_output", "QC_SKILL_CONTRACT_RANGE"]
+           "background_providers", "batch", "frame_choice", "variants", "layered_output", "kit", "QC_SKILL_CONTRACT_RANGE"]

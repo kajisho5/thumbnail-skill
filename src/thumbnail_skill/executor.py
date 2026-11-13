@@ -102,30 +102,71 @@ class Executor:
     def response(self, tool: str, params: Any) -> Dict[str, Any]:
         """Always returns one response document; never raises."""
         try:
-            if tool == "thumbnail/validate":
-                return self._envelope(True, "ok", {"validation": self._validate(params)})
-            if tool == "thumbnail/render":
-                return self._envelope(True, "ok", self._render(params))
-            if tool == "thumbnail/extract_frame":
-                return self._envelope(True, "ok", self._extract_frame(params))
-            if tool == "thumbnail/render_batch":
-                return self._envelope(True, "ok", self._render_batch(params))
-            if tool == "thumbnail/render_layers":
-                return self._envelope(True, "ok", self._render_layers(params))
-            if tool == "thumbnail/render_variants":
-                return self._envelope(True, "ok", self._render_variants(params))
-            if tool == "thumbnail/choose_frame":
-                return self._envelope(True, "ok", self._choose_frame(params))
-            if tool == "thumbnail/place_text":
-                return self._envelope(True, "ok", self._place_text(params))
-            if tool == "thumbnail/generate_background":
-                return self._envelope(True, "ok", self._generate_background(params))
-            raise ThumbnailError("UNSUPPORTED_OPERATION", f"unknown tool {tool!r}", {"tool": tool, "supported": TOOLS})
+            params, kit_app = self._apply_kit(tool, params)
+            body = self._dispatch(tool, params)
+            if kit_app is not None:
+                rep = kit_app.report()
+                if tool == "thumbnail/validate":
+                    body["validation"]["kit"] = rep
+                else:
+                    body["kit"] = rep
+                    if isinstance(body.get("provenance"), dict):
+                        body["provenance"]["kit"] = {"schema": rep["schema"], "path": rep["file"]["path"], "sha256": rep["file"]["sha256"]}
+            return self._envelope(True, "ok", body)
         except ThumbnailError as e:
             return self._envelope(False, "cancelled" if e.code == "CANCELLED" else "error", {"error": e.to_dict()})
         except Exception as e:  # a bug in this skill: still one document, never a traceback on stdout
             err = ThumbnailError("INTERNAL_ERROR", f"{type(e).__name__}: {e}")
             return self._envelope(False, "error", {"error": err.to_dict()})
+
+    # ---- options.kit (ADR-18): the kit's values go into the documents before anything else reads them
+    def _apply_kit(self, tool: str, params: Any) -> Tuple[Any, Any]:
+        from .kit import KIT_TOOLS, KitApplication, load_kit, placeholder_kit
+        from .model import parse_options
+        if not isinstance(params, dict) or not isinstance(params.get("options"), dict) or "kit" not in params["options"]:
+            return params, None
+        if tool not in KIT_TOOLS + ("thumbnail/validate",):
+            raise ThumbnailError("INVALID_REQUEST", f"options.kit applies to {', '.join(KIT_TOOLS)} and thumbnail/validate, not {tool}", {"field": "options.kit"})
+        options = dict(params["options"])
+        kit_path = options.pop("kit")
+        params = dict(params, options=options)
+        parse_options(dict(options, kit=kit_path))   # the options' own shape first, the kit path's type included
+        if tool == "thumbnail/validate":
+            app = KitApplication(placeholder_kit(), tool)
+        else:
+            self._apply_policy_overrides(parse_options(options))   # the kit file and its logo resolve under the request's own policy
+            app = KitApplication(load_kit(self.policy.resolve_input, kit_path), tool, self.policy.resolve_input)
+        if tool == "thumbnail/render_batch":
+            targets = params.get("targets")
+            if isinstance(targets, list):
+                params["targets"] = [dict(t, document=app.apply(t["document"], f"targets[{i}].document", t.get("preset")))
+                                     if isinstance(t, dict) and "document" in t else t for i, t in enumerate(targets)]
+        elif "document" in params:
+            out = params.get("output")
+            params["document"] = app.apply(params["document"], "document", out.get("preset") if isinstance(out, dict) else None)
+        if tool == "thumbnail/render_variants":
+            v = params.get("variants")
+            if (v is None or isinstance(v, dict)) and (v or {}).get("palettes") is None:
+                palettes = app.take_palettes()
+                if palettes:
+                    params["variants"] = dict(v or {}, palettes=palettes)
+                else:   # this skill's default palettes are not the kit's colours, so they are not used either
+                    raise ThumbnailError("INVALID_REQUEST", "the kit states none of colors.text / primary / background / outline, so no variant palette can "
+                                         "be drawn from it; give variants.palettes", {"field": "variants.palettes", "reason": "kit_without_colors"})
+        if not app.kit.placeholder:
+            unmapped, _unused = app.unmapped_and_unused()
+            for u in unmapped:
+                self.warnings.append(f"kit: {u['key']} is not mapped: {u['reason']}")
+        return params, app
+
+    def _dispatch(self, tool: str, params: Any) -> Dict[str, Any]:
+        handlers = {"thumbnail/validate": lambda p: {"validation": self._validate(p)}, "thumbnail/render": self._render,
+                    "thumbnail/extract_frame": self._extract_frame, "thumbnail/render_batch": self._render_batch, "thumbnail/render_layers": self._render_layers,
+                    "thumbnail/render_variants": self._render_variants, "thumbnail/choose_frame": self._choose_frame, "thumbnail/place_text": self._place_text,
+                    "thumbnail/generate_background": self._generate_background}
+        if tool not in handlers:
+            raise ThumbnailError("UNSUPPORTED_OPERATION", f"unknown tool {tool!r}", {"tool": tool, "supported": TOOLS})
+        return handlers[tool](params)
 
     # ---- thumbnail/validate: structural only, no filesystem, no fonts, no ffmpeg
     def _validate(self, params: Any) -> Dict[str, Any]:

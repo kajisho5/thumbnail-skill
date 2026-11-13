@@ -1,0 +1,26 @@
+{
+  "schema": "velisa/kit@1",
+  "name": "harbour",
+  "font": "DejaVu Sans",
+  "font_file": "fonts/Brand-Regular.ttf",
+  "colors": {
+    "primary": "FF6A00",
+    "secondary": "2E8B57",
+    "text": "F4F1E8",
+    "outline": "101010",
+    "background": "0B1D2A",
+    "accent": "1E6F8E"
+  },
+  "logo": "logo.png",
+  "logo_position": "top-right",
+  "logo_scale": 120,
+  "logo_opacity": 0.9,
+  "safe_margin": 40,
+  "lang": "en",
+  "styles": {"caption": {"font": "DejaVu Sans", "size": 30, "colour": "F4F1E8", "box": true, "position": "bottom"}},
+  "caption": {"size": 28, "position": "bottom", "animate": "pop", "karaoke": true, "bold": true, "outline": 2},
+  "loudness": {"lufs": -14, "tp": -1},
+  "fonts": [{"family": "DejaVu Sans", "file": "fonts/Brand-Regular.ttf", "licence": "Bitstream Vera / DejaVu (free)", "embedding": "allowed"}],
+  "logo_variants": {"color": "logo.png", "mono": "logo-mono.png", "white": "logo-white.png", "black": "logo-black.png", "clear_space": 24},
+  "contrast": [{"fg": "F4F1E8", "bg": "0B1D2A", "ratio": 15.2}]
+}

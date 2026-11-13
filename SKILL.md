@@ -25,6 +25,10 @@ optional `thumbnail/generate_background` (one AI background image from a caller-
 seed, FLUX.2 [klein] 4B, only when `thumbnail doctor --json` -> `checks.background_providers` says
 `available`; otherwise it is refused with `TOOL_ERROR` / `provider_unavailable`, and nothing else
 changes). Use its output as an ordinary `image` asset; report its `provenance` (engine, licence).
+A brand kit (`options.kit` / `--kit`: a Velisa `kit@1` file or an ffmpeg-skill `brand.json`) fills the
+text colour, band and stroke colours, canvas background, `font_id` and a `kit-logo` element that a
+render's document leaves out; the document's own values win, and `response.kit` lists what was used
+and every kit key that was not (`unmapped`, `unused`).
 
 Rules for a calling agent:
 1. Decide everything about content before calling this skill: which still image, or which exact

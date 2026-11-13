@@ -91,6 +91,8 @@ thumbnail validate request.json --json         # structural check only; no file 
 thumbnail render request.json --json           # canvas + assets + elements -> PNG/JPEG
 thumbnail render request.json --layers layers/ --json
                                                 # also every composed layer as a PNG with alpha + layers.json
+thumbnail render request.json --kit kit.json --json
+                                                # fill the colours, font and logo the document leaves out from a kit@1 brand kit
 thumbnail render request.json --variants 3 --json
                                                 # 3 documented variants (<stem>-v1..v3), each checked at phone size
 thumbnail extract-frame request.json --json    # one video timestamp -> one frame, nothing else
@@ -330,6 +332,32 @@ legibility (`video.text_regions`, WCAG 2.x). A variant below a minimum is report
 (`small_size.status: fail`, `text_too_small` / `low_contrast`, listed in `flagged`) and still
 written. Nothing is dropped and nothing picks a winner. Without qc-skill (`--qc-skill`,
 `THUMBNAIL_SKILL_QC_SKILL_DIR`, or `vendor/qc-skill`), contrast is reported as not measured.
+
+## Brand kit (`kit@1`)
+
+`options.kit` (CLI: `thumbnail render request.json --kit kit.json`; ADR-18; roadmap step 9) is the
+path of a Velisa `kit@1` brand kit, which is a superset of ffmpeg-skill `brand.json`, so a plain
+`brand.json` works too. `render`, `render_layers`, `render_variants` and `render_batch` (every
+target) read it. The kit fills only what the document leaves out, and only with what the kit states:
+
+| Kit | ThumbnailDocument |
+|---|---|
+| `colors.text` | each text element's `color` |
+| `colors.background` | `canvas.background`, and the band colour of a text whose `background` gives only `padding` |
+| `colors.outline` | the `stroke.color` of a text whose `stroke` gives only `width` |
+| `font` | each text element's `font_id`: the registered font_id whose font file on this machine has that family name |
+| `logo`, `logo_position`, `logo_scale`, `safe_margin`, `logo_opacity` | an image element `kit-logo`, `logo_scale` px wide, `safe_margin` from the named edge |
+| `colors.primary` | `render_variants`' palettes only |
+
+Kit colours are `RRGGBB`; this skill adds the `#`. A value the document states wins, and is listed in
+`kit.kept`. Nothing the kit leaves out is filled in: a text without `color` or `font_id` is still
+refused when the kit has no `colors.text` or no matching font, and no logo is placed unless the kit
+states its position, size and margin. The response's `kit` gives the file's hash, the values used
+(`applied`, each with its target and kit key), `kept`, the font, the logo box, and every kit key that
+was not used: `unmapped` (no counterpart here, such as `font_file`, `colors.accent`, `styles`,
+`loudness`, `fonts`) and `unused` (a counterpart the document left no slot for), each with its reason.
+Each unmapped key also gives a warning. With a kit and no `variants.palettes`, `render_variants`
+draws its palettes from the kit's colours only.
 
 ## Frame choice and face-aware text
 

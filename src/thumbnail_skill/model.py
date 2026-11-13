@@ -614,7 +614,7 @@ def check_preset(name: Optional[str], width: int, height: int, fmt: str, size: i
 
 
 def parse_options(value: Any, where: str = "options") -> Dict[str, Any]:
-    d = _obj(value if value is not None else {}, where, ("allowed_input_roots", "workspace", "reuse", "timeout", "ffmpeg_skill"), ())
+    d = _obj(value if value is not None else {}, where, ("allowed_input_roots", "workspace", "reuse", "timeout", "ffmpeg_skill", "kit"), ())
     opts: Dict[str, Any] = {"allowed_input_roots": None, "workspace": None, "reuse": True, "timeout": 120.0, "ffmpeg_skill": None}
     if "allowed_input_roots" in d:
         roots = d["allowed_input_roots"]
@@ -633,6 +633,10 @@ def parse_options(value: Any, where: str = "options") -> Dict[str, Any]:
         if not isinstance(d["ffmpeg_skill"], str) or not d["ffmpeg_skill"]:
             raise ThumbnailError("INVALID_REQUEST", f"{where}.ffmpeg_skill must be a non-empty string", {"field": f"{where}.ffmpeg_skill"})
         opts["ffmpeg_skill"] = d["ffmpeg_skill"]
+    if "kit" in d:   # a kit@1 file (ADR-18); the executor applies it to the document before parsing and removes it
+        if not isinstance(d["kit"], str) or not d["kit"]:
+            raise ThumbnailError("INVALID_REQUEST", f"{where}.kit must be the path of a kit@1 JSON file", {"field": f"{where}.kit"})
+        opts["kit"] = d["kit"]
     return opts
 
 

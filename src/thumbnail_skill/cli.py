@@ -9,6 +9,8 @@ alike. stderr: diagnostics only. Exit code: 0 on success, otherwise errors.EXIT_
   thumbnail render request.json --json         render a ThumbnailDocument to PNG/JPEG
   thumbnail render request.json --layers DIR --json
                                                also every composed layer as a PNG with alpha + layers.json (ADR-17)
+  thumbnail render request.json --kit kit.json --json
+                                               fill the colours, font and logo the document leaves out from a kit@1 brand kit (ADR-18)
   thumbnail render request.json --variants N --json
                                                N documented variants (layout, colour, frame), each checked at phone size (ADR-16)
   thumbnail extract-frame request.json --json  one video frame at one timestamp, nothing else
@@ -73,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_opts(r)
     r.add_argument("--variants", type=int, metavar="N", help="write N documented variants (<stem>-v1..vN) instead, each checked at phone size (ADR-16)")
     r.add_argument("--layers", metavar="DIR", help="also write every composed layer as a PNG with alpha plus layers.json into DIR (ADR-17)")
+    r.add_argument("--kit", metavar="KIT", help="a Velisa kit@1 brand kit (or an ffmpeg-skill brand.json): fills the colours, font and logo the document leaves out (ADR-18)")
     r.add_argument("--qc-skill", help="qc-skill checkout used for the variants' contrast check (default: env THUMBNAIL_SKILL_QC_SKILL_DIR / ~/.claude/skills/qc-skill / ./vendor / ..)")
     _add_common(r)
 
@@ -201,6 +204,8 @@ def _run_tool_command(tool: str, args: argparse.Namespace) -> dict:
         options["timeout"] = args.timeout
     if args.ffmpeg_skill and "ffmpeg_skill" not in options:
         options["ffmpeg_skill"] = args.ffmpeg_skill
+    if getattr(args, "kit", None) and "kit" not in options:
+        options["kit"] = args.kit
     params["options"] = options
     if tool == "thumbnail/render" and getattr(args, "layers", None):
         if getattr(args, "variants", None) is not None:
