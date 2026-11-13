@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.18 (2026-11-13)
+
+## What's Changed
+
+## 📝 Documentation
+
+* Brand kit reader for kit@1 (roadmap step 9) (#31) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.17...v0.1.18
+
+
 ## v0.1.17 (2026-11-12)
 
 ## What's Changed
