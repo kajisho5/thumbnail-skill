@@ -420,3 +420,62 @@
   off-canvas element, a logo with opacity, a text with background band, stroke, shadow and opacity, and a plain
   text. Further cases: JPEG (against the lossless composite, which equals the PNG render), a reused render, a video
   frame through ffmpeg-skill, overwrite and the CLI.
+- **ADR-18 The brand kit is `options.kit`: a Velisa `kit@1` file (a superset of ffmpeg-skill `brand.json`) fills the
+  colours, `font_id` and logo a document leaves out, by the spec's mapping table, and every key it does not use is
+  reported.** (`ECOSYSTEM_ROADMAP.md` step 9: thumbnails in the same colours, font and logo as the programme's titles and
+  lower thirds.)
+  *Request:* `options.kit` is the kit file's path, a field of RenderOptions, read by `render`, `render_layers`,
+  `render_variants` and `render_batch` (each target's template). The file and its logo are inputs under the request's
+  path policy; at most 256 KiB of UTF-8 JSON. Relative paths resolve against the kit file, as in ffmpeg-skill. The
+  executor applies the kit to the raw documents before anything parses them and removes `kit` from the options, so every
+  later step (batch planning and text fit, variants, layers, the reuse cache) sees an ordinary, fully stated document.
+  `validate` touches no file, so it does not read the kit: the slots a kit could fill get placeholders for the structural
+  check and are listed (`validation.kit.slots`). Any other tool refuses `options.kit` (`INVALID_REQUEST`).
+  *Mapping* (Velisa `docs/specs/kit.md`, the thumbnail-skill row): `#` is added to each `RRGGBB`. `colors.text` -> each
+  text's `color`; `colors.background` -> `canvas.background`; `colors.outline` -> `stroke.color`. Two choices the spec
+  leaves open are stated here. The band (`text.background.color`) takes `colors.background`, because ffmpeg-skill's lower
+  third draws its bar in the background colour and its text in the text colour (`graphics.py`), so the thumbnail matches
+  the programme's lower thirds. `font` maps to the registered font_id whose resolved file on this machine has that
+  family name (Pillow `getname()`), regular style first, then by font_id. That is "a font_id registered for it" without
+  a new registry entry or a font path in the request: `DejaVu Sans` is `sans` on Linux, and on a machine where no
+  registered font has that family, `font` is reported unmapped with the families found. A kit fills a band or stroke
+  colour only where the document gives the band (`background: {padding}`) or the stroke (`stroke: {width}`): whether
+  there is a band, and its padding, are layout, which the document decides.
+  *Logo:* the spec's thumbnail row names no logo, but the roadmap step does. The kit's logo is placed as an image
+  element `kit-logo` only when the kit states `logo`, `logo_position` (ffmpeg-skill's nine position names),
+  `logo_scale` (width in px; the height follows the image) and `safe_margin` (from the named edges). `logo_opacity` is
+  used when stated, otherwise the renderer's default 1.0. ffmpeg-skill's defaults (top-right, 160, 0.9, 48) are not the
+  user's choice and are not filled in. A document with its own `kit-logo` element or asset keeps it.
+  *Precedence:* a value the document states wins and is listed in `kit.kept` with the kit's value. Nothing the kit
+  lacks is filled: a text without `color` or `font_id` is still `INVALID_REQUEST` when the kit has no `colors.text` or
+  no matching font.
+  *Reported, not dropped:* `response.kit {schema, read, file {path, sha256, size}, name, colors, applied [{target,
+  value, from}], kept, unmapped [{key, reason}], unused [{key, reason}], font?, logo?, palettes?}`, and
+  `provenance.kit`. `unmapped` holds the keys with no counterpart here: `font_file` (fonts only by font_id), `colors.accent`,
+  `colors.secondary`, `colors.primary` outside `render_variants`, `lang`, `styles`, `caption`, `loudness`, `fonts`,
+  `logo_variants`, `contrast`, `name` (recorded as `kit.name`), logo keys when no logo can be placed, an unmatched
+  `font`, and keys `kit@1` does not define. Each gives a warning. `unused` holds keys with a counterpart that the document
+  left no slot for, for example `colors.outline` when no text has a stroke. A value that maps but is malformed (a colour
+  that is not `RRGGBB`, an unknown `logo_position`, `logo_scale` 0, an unknown `schema`, both `colors` and `colours`) is
+  refused (`INVALID_INPUT`, `bad_kit`), not left out. `null` is "not stated", as ffmpeg-skill treats it, and `colours`
+  (the remotion spelling) is read as `colors`.
+  *Variants:* with a kit and no `variants.palettes`, the palette axis is drawn from the kit's colours only:
+  text on a background band, background on a primary band (ffmpeg-skill's chapter look), text with an outline, primary
+  with an outline, each only when the kit states both of its colours. The band padding (16) and stroke width (4) are
+  this skill's variant defaults (ADR-16), not kit values. Palettes the caller gives win.
+  *Consistency:* motion-graphics-skill's `options.kit` (its ADR-31) has the same shape: a path in `options`, the
+  spec's table applied exactly, only stated values passed on, and `response.kit.unmapped` with reasons.
+  *Contract:* additive. A new top-level `kit` block (mapping, precedence, logo, variants, the unmapped keys and
+  reasons, the result shape). The tools' declared `input` and `output`, `document`, `variants`, `batch`, `execution`,
+  `errors` and `provenance` are unchanged; `options.kit` is a RenderOptions field and `response.kit` an added key, both
+  documented in the `kit` block. Without `options.kit` every request behaves as before. video-production-agent's
+  `check_contract` and `contract_breaking_drift` against its pinned `contract_0.1.16.json` return nothing.
+  *Tests:* `tests/test_kit.py`. The `kit@1` fixture (`tests/fixtures/kit_brand.json`: every `brand.json` key and every
+  `kit@1` addition) renders a thumbnail in which the two most common colours inside the title's painted box are the
+  kit's band and text colours, the logo is at the kit's position, width and opacity, and the reported font is the kit's
+  family (the fixture's font is set to this machine's `sans` family, since font files differ per OS; a separate test
+  checks `DejaVu Sans` maps to `sans` where it is registered). The twelve keys with no counterpart are reported. The same
+  document with an explicit colour, font and canvas background keeps them. Three variants with a kit use only the kit's
+  colours, checked on their palettes and on every colour covering more than 2000 pixels of each written file (apart from
+  the logo). Also: a plain `brand.json` with `colours`, values the kit lacks, the document's own `kit-logo`, batch,
+  layers, validate, the refusals, `render --kit` and the contract block.
