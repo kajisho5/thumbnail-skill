@@ -49,8 +49,8 @@ autolabeler:
     files:
       - '.github/**'
 
-# Only release-level labels make a release: a pull request labelled only documentation / chore (or ci / test)
-# releases nothing (.github/scripts/release_gate.py, Velisa ADR-023, imagemagick-skill's rule). release-drafter's
+# Only release-level labels make a release (`dependencies` is one: a patch): a pull request labelled only
+# documentation / chore (or ci / test) releases nothing (.github/scripts/release_gate.py, Velisa ADR-023, imagemagick-skill's rule). release-drafter's
 # `semver-increment` accepts only major, minor or patch, so the gate decides "no release" first: it takes the labels
 # of the categories below that carry a `semver-increment`, less documentation / chore. An unlabelled pull request
 # ("Other changes") still ships as a patch.
@@ -73,6 +73,11 @@ categories:
     semver-increment: 'patch'
     when:
       labels: ['fix', 'patch']
+  - title: '⬆️ Dependencies'
+    # A Dependabot pull request releases, as a patch (Velisa D37 addendum).
+    semver-increment: 'patch'
+    when:
+      labels: ['dependencies']
   - title: '📝 Documentation'
     semver-increment: 'patch'
     when:
