@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.20 (2026-11-19)
+
+## What's Changed
+
+## 🧰 Maintenance
+
+* ci: call Velisa's contract-diff on contract changes, one run per pull request (#33) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.19...v0.1.20
+
+
 ## v0.1.19 (2026-11-19)
 
 ## What's Changed

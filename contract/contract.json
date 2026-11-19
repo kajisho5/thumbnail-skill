@@ -4,7 +4,7 @@
   "id": "thumbnail-skill",
   "name": "thumbnail-skill",
   "package": "thumbnail-skill",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "contract_version": "1",
   "kind": "execution",
   "role": "thumbnail rendering (deterministic execution); not decision, not selection, not design",
