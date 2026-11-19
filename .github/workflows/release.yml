@@ -47,6 +47,14 @@ jobs:
       # dry-run: true means this step only computes outputs (resolved_version, body, ...);
       # it never creates or updates a GitHub Release itself. We create the real Release
       # ourselves further down, once we've decided the effective version (see below).
+      # Velisa ADR-023: pull requests labelled only chore / ci / docs / test release nothing. release-drafter's
+      # `default` cannot say "no release", so release_gate.py answers that from the merged pull requests' labels.
+      - name: Decide whether anything merged since the latest tag is releasable
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/release_gate.py
+
       - name: Resolve next version and changelog body (dry run)
         id: drafter
         uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
@@ -60,6 +68,7 @@ jobs:
         id: version
         env:
           RESOLVED_VERSION: ${{ steps.drafter.outputs.resolved_version }}
+          RELEASABLE: ${{ steps.gate.outputs.releasable }}
         run: |
           set -euo pipefail
           CURRENT_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
@@ -73,6 +82,11 @@ jobs:
           if [ -n "$LATEST_TAG" ] && [ "$CURRENT_VERSION" = "$LATEST_TAG_VERSION" ]; then
             EFFECTIVE_VERSION="$RESOLVED_VERSION"
             BUMP_MODE="auto"
+            if [ "${RELEASABLE:-}" = "false" ]; then
+              # only chore/ci/docs/test pull requests since the tag (Velisa ADR-023): an empty version skips below
+              echo "Only chore/ci/docs/test pull requests since $LATEST_TAG: nothing to release."
+              EFFECTIVE_VERSION=""
+            fi
           else
             EFFECTIVE_VERSION="$CURRENT_VERSION"
             BUMP_MODE="manual"
@@ -138,7 +152,7 @@ jobs:
           path.write_text(new_text, encoding="utf-8")
           PYEOF
 
-      - name: Commit version bump and changelog, tag, push
+      - name: Commit version bump and changelog, tag (not pushed yet)
         if: steps.version.outputs.skip == 'false'
         env:
           EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
@@ -157,6 +171,21 @@ jobs:
             git commit -m "release: v${EFFECTIVE_VERSION}"
           fi
           git tag "v${EFFECTIVE_VERSION}"
+
+      # The release commit is pushed with GITHUB_TOKEN, so no workflow runs on it on main: test it here, before
+      # it is pushed. A failure stops the release; main and the tags stay as they were (Velisa ADR-023).
+      - name: Test the release commit before pushing it
+        if: steps.version.outputs.skip == 'false'
+        run: |
+          python3 -m pip install -q -e . pytest
+          python3 -m pytest -q tests/test_contract_file.py tests/test_release_labels.py tests/test_version_source.py tests/test_release_gate.py
+
+      - name: Push the release commit and tag
+        if: steps.version.outputs.skip == 'false'
+        env:
+          EFFECTIVE_VERSION: ${{ steps.version.outputs.effective_version }}
+        run: |
+          set -euo pipefail
           # Pushed with the default GITHUB_TOKEN persisted by actions/checkout: per GitHub's
           # anti-recursion rule this will not trigger this workflow (or any other) again.
           git push origin HEAD:main
