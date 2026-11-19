@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.22 (2026-11-19)
+
+## What's Changed
+
+## 🐛 Bug Fixes
+
+* ci(release): test the release commit before pushing; no release for chore/ci/docs-only changes (#35) @kajisho5, @claude
+
+## 📝 Documentation
+
+* ci(release): test the release commit before pushing; no release for chore/ci/docs-only changes (#35) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* ci(release): test the release commit before pushing; no release for chore/ci/docs-only changes (#35) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.21...v0.1.22
+
+
 ## v0.1.21 (2026-11-19)
 
 ## What's Changed
