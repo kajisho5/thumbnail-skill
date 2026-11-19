@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.21 (2026-11-19)
+
+## What's Changed
+
+## 🧰 Maintenance
+
+* ci: run contract-diff on every pull request (#34) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.20...v0.1.21
+
+
 ## v0.1.20 (2026-11-19)
 
 ## What's Changed
