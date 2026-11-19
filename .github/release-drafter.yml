@@ -49,6 +49,11 @@ autolabeler:
     files:
       - '.github/**'
 
+# Only release-level labels make a release: a pull request labelled only documentation / chore (or ci / test)
+# releases nothing (.github/scripts/release_gate.py, Velisa ADR-023, imagemagick-skill's rule). release-drafter's
+# `semver-increment` accepts only major, minor or patch, so the gate decides "no release" first: it takes the labels
+# of the categories below that carry a `semver-increment`, less documentation / chore. An unlabelled pull request
+# ("Other changes") still ships as a patch.
 categories:
   - title: '💥 Breaking Changes'
     semver-increment: 'major'
