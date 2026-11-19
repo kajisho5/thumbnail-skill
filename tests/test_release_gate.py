@@ -31,7 +31,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_release_drafter_maps_no_maintenance_label_to_a_bump(self):
         # this file has no version-resolver: the gate reads the categories with a semver-increment, less maintenance
         labels = self.gate.drafter_release_labels(_read(".github", "release-drafter.yml"))
-        self.assertEqual(labels, {"major", "minor", "feature", "security", "fix", "patch"})
+        self.assertEqual(labels, {"major", "minor", "feature", "security", "fix", "patch", "dependencies"})
         self.assertEqual(self.gate.release_labels(), labels)
 
     def test_release_level_labels_and_unlabelled_pull_requests_release(self):
@@ -41,6 +41,13 @@ class ReleaseGateTests(unittest.TestCase):
     def test_maintenance_labels_alone_release_nothing(self):
         for labels in (["ci"], ["docs"], ["documentation"], ["chore"], ["test"], ["ci", "docs", "contract:none"]):
             self.assertFalse(self.gate.pull_releases(labels), labels)
+
+    def test_dependencies_pull_requests_release_as_a_patch(self):
+        # Velisa D37 addendum: a pull request labelled `dependencies` (Dependabot) is released, as a patch.
+        self.assertIn("dependencies", self.gate.release_labels())
+        for labels in (["dependencies"], ["dependencies", "github_actions"], ["dependencies", "chore"]):
+            self.assertTrue(self.gate.pull_releases(labels), labels)
+        self.assertTrue(self.gate.decide([("chore(deps): bump x (#3)", [["dependencies"]])])[0])
 
     def test_decide_over_the_commits_since_the_tag(self):
         self.assertFalse(self.gate.decide([("ci: x (#1)", [["ci"]]), ("docs: y (#2)", [["documentation"]])])[0])

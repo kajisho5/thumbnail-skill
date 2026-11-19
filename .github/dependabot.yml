@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: "weekly"
     labels:
-      - "chore"
+      - "dependencies" # released as a patch (.github/release-drafter.yml, Velisa D37 addendum)
 
   # This skill's only runtime dependency (Pillow) and dev/test tooling are declared in
   # pyproject.toml; there is no requirements.txt / Pipfile / poetry.lock to also track.
@@ -14,4 +14,4 @@ updates:
     schedule:
       interval: "weekly"
     labels:
-      - "chore"
+      - "dependencies" # released as a patch (.github/release-drafter.yml, Velisa D37 addendum)
