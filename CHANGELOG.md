@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.19 (2026-11-19)
+
+## What's Changed
+
+## 📝 Documentation
+
+* ci: commit the contract as contract/contract.json (#32) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* ci: commit the contract as contract/contract.json (#32) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.18...v0.1.19
+
+
 ## v0.1.18 (2026-11-13)
 
 ## What's Changed
