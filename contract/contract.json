@@ -1,0 +1,1203 @@
+{
+  "schema": "thumbnail-skill/contract@1",
+  "skill_id": "thumbnail-skill",
+  "id": "thumbnail-skill",
+  "name": "thumbnail-skill",
+  "package": "thumbnail-skill",
+  "version": "0.1.18",
+  "contract_version": "1",
+  "kind": "execution",
+  "role": "thumbnail rendering (deterministic execution); not decision, not selection, not design",
+  "description": "Renders a typed ThumbnailDocument (canvas + still-image/video-frame assets + positioned image/text elements) into a validated PNG/JPEG with provenance. Never decides what a thumbnail should show: it ranks candidate frames and moves text clear of faces only from facts measured elsewhere (detection-skill faces, caller frame measures) by stated formulas, and the caller decides. No face detection or pixel analysis of its own, no OCR, no title generation, no click-through prediction, no A/B or publish decisions. Not an AI agent.",
+  "repository": "https://github.com/kajisho5/thumbnail-skill",
+  "not_provided": [
+    "AI reasoning",
+    "decisions",
+    "production plans",
+    "searching a video for frames",
+    "face/object detection",
+    "OCR",
+    "automatic title generation",
+    "free-form layout generation",
+    "click-through-rate prediction",
+    "A/B testing",
+    "publish decisions",
+    "video editing",
+    "color grading",
+    "subtitle rendering",
+    "arbitrary ffmpeg filters",
+    "shell execution",
+    "network access"
+  ],
+  "tools": [
+    {
+      "tool_id": "thumbnail/validate",
+      "role": "validation",
+      "description": "Validate a ThumbnailDocument (canvas + assets + elements) structurally. Touches no file system, no font, no ffmpeg-skill; renders nothing.",
+      "input": {
+        "document": "ThumbnailDocument"
+      },
+      "output": {
+        "ok": "bool",
+        "document_id": "str",
+        "canvas": "ThumbnailCanvas",
+        "assets": "int",
+        "elements": "int"
+      },
+      "produces_output": false,
+      "writes_media": false,
+      "deterministic": true,
+      "mutates_input": false,
+      "side_effects": []
+    },
+    {
+      "tool_id": "thumbnail/render",
+      "role": "execution",
+      "description": "Render a typed ThumbnailDocument (still image and/or an explicit video frame, positioned image and text elements) into a validated PNG/JPEG artifact with provenance. Never decides what to show: frame timestamps, layout, text and fonts are exactly what the caller specified.",
+      "input": {
+        "document": "ThumbnailDocument",
+        "output": "OutputSpec",
+        "options": "RenderOptions"
+      },
+      "output": {
+        "output": "path",
+        "format": "png|jpeg",
+        "width": "int",
+        "height": "int",
+        "size": "int",
+        "sha256": "str",
+        "reused": "bool",
+        "provenance": "object"
+      },
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": true,
+      "mutates_input": false,
+      "idempotency_hint": "same document + same asset/font content + same skill/engine version reuses the cached artifact",
+      "delegates_to": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/look"
+      ],
+      "side_effects": [
+        "writes the output file",
+        "writes a reuse cache entry under the workspace"
+      ]
+    },
+    {
+      "tool_id": "thumbnail/extract_frame",
+      "role": "execution",
+      "description": "Extract exactly the video frame at a caller-given timestamp as a PNG/JPEG. No scene detection, no scoring, no 'best frame' search: one timestamp in, one frame out.",
+      "input": {
+        "source": {
+          "path": "file",
+          "timestamp": "seconds >= 0"
+        },
+        "output": "OutputSpec",
+        "options": "RenderOptions"
+      },
+      "output": {
+        "output": "path",
+        "format": "png|jpeg",
+        "width": "int",
+        "height": "int",
+        "size": "int",
+        "sha256": "str",
+        "reused": "bool",
+        "provenance": "object"
+      },
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": true,
+      "mutates_input": false,
+      "idempotency_hint": "same source content + same timestamp + same skill/engine version reuses the cached artifact",
+      "delegates_to": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/look"
+      ],
+      "side_effects": [
+        "writes the output file",
+        "writes a reuse cache entry under the workspace"
+      ]
+    },
+    {
+      "tool_id": "thumbnail/render_batch",
+      "role": "execution",
+      "description": "Render one thumbnail per row of a table (a CSV file or inline rows) and per platform target, from one ThumbnailDocument template per target with {{column}} placeholders. Named text elements are shrunk to fit a caller-given box, down to a stated minimum font size, never cut or wrapped; a row that does not fit is refused. Every row is checked before anything is written; each file then goes through thumbnail/render, with its output check and its output.preset check.",
+      "input": {
+        "csv": {
+          "path": "file",
+          "encoding": "utf-8 (default) | cp932",
+          "delimiter": "',' (default) | ';' | tab"
+        },
+        "rows": "[{column: string}] (instead of csv)",
+        "targets": "[{preset, document: ThumbnailDocument template, text_fit?: {element_id: {max_width, max_height?, min_font_size}}}]",
+        "output": {
+          "directory": "path",
+          "name": "template, default {{row}}-{{preset}}",
+          "format": "png|jpeg",
+          "overwrite": "bool",
+          "jpeg_quality": "int (jpeg)"
+        },
+        "options": "RenderOptions"
+      },
+      "output": {
+        "items": "[{row, preset, output, format, width, height, size, sha256, reused, preset_check, fitted}]",
+        "count": "int",
+        "rows": "int",
+        "targets": "[preset]",
+        "provenance": "object"
+      },
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": true,
+      "mutates_input": false,
+      "idempotency_hint": "each file is a thumbnail/render and is reused from its cache the same way",
+      "delegates_to": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/look"
+      ],
+      "side_effects": [
+        "writes one output file per row and target",
+        "writes reuse cache entries under the workspace"
+      ]
+    },
+    {
+      "tool_id": "thumbnail/render_layers",
+      "role": "execution",
+      "description": "Render a ThumbnailDocument as thumbnail/render does and also write every composed layer (background, each image, each text background band, each text) as a PNG with alpha, cropped to its visible pixels, with a manifest (order, position, size) for a designer to rebuild it (CLI: thumbnail render --layers DIR). The tool rebuilds the image from the layer files on disk by the manifest and refuses (VALIDATION_ERROR, layers_mismatch) unless it equals the thumbnail pixel for pixel.",
+      "input": {
+        "document": "ThumbnailDocument",
+        "output": "OutputSpec",
+        "options": "RenderOptions",
+        "layers": {
+          "directory": "path",
+          "overwrite": "bool (default: output.overwrite)"
+        }
+      },
+      "output": {
+        "output": "path",
+        "format": "png|jpeg",
+        "width": "int",
+        "height": "int",
+        "size": "int",
+        "sha256": "str",
+        "reused": "bool",
+        "layers": "{directory, manifest, count, layers [{order, role, element_id, file, position, size, sha256}], verified}",
+        "provenance": "object"
+      },
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": true,
+      "mutates_input": false,
+      "delegates_to": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/look"
+      ],
+      "side_effects": [
+        "writes the output file",
+        "writes one PNG per layer and layers.json into layers.directory",
+        "writes a reuse cache entry under the workspace"
+      ]
+    },
+    {
+      "tool_id": "thumbnail/render_variants",
+      "role": "execution",
+      "description": "Write N documented variants of one thumbnail for a platform A/B test (CLI: thumbnail render --variants N). Variant k takes entry (k-1) mod n of each axis: the text element's layout, its palette, and the frame one image element shows; entry 0 of each axis is the document as given, so variant 1 is the original. Each variant is a thumbnail/render and is checked at phone size: its text height at phone_width px wide (default 320) and its contrast through qc-skill's text legibility. A variant below a minimum is reported (flagged), never dropped. Never picks a winner.",
+      "input": {
+        "document": "ThumbnailDocument",
+        "output": "OutputSpec (variants are written as <stem>-v1..vN)",
+        "options": "RenderOptions",
+        "variants": {
+          "count": "1..12",
+          "text_element": "element_id (default: the first text element)",
+          "layouts": "[{name, position, align?, font_size?}] (optional)",
+          "palettes": "[{name, color, background?, stroke?}] (optional)",
+          "frame_element": "element_id",
+          "frames": "[{name, asset}] (optional)",
+          "phone_width": "px (default 320)",
+          "min_text_height_px": "px at phone_width (default 12)",
+          "min_contrast_ratio": "default 4.5",
+          "qc_skill": "checkout directory (optional)"
+        }
+      },
+      "output": {
+        "variants": "[{variant, output, choices, description, small_size {status, ok, texts [{element_id, text_height_px_at_phone, contrast_ratio, findings}]}}]",
+        "flagged": "[variant]",
+        "axes": "object",
+        "provenance": "object"
+      },
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": true,
+      "mutates_input": false,
+      "idempotency_hint": "each variant is a thumbnail/render and is reused from its cache the same way",
+      "delegates_to": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/look",
+        "qc-skill/run"
+      ],
+      "side_effects": [
+        "writes one output file per variant",
+        "writes reuse cache entries under the workspace"
+      ]
+    },
+    {
+      "tool_id": "thumbnail/choose_frame",
+      "role": "ranking",
+      "description": "Rank the sampled frames of a detection-skill/detections@1 face document (detection faces --attributes) by a stated, weighted formula over measured facts: eyes open, frontal angle and face size from detection-skill, sharpness from the caller's frame measures or else detection-skill's face sharpness, exposure from the caller's frame measures. Frames whose main face has its eyes closed come after every frame where they are open. Every part and every missing part is listed. Detects nothing and reads no pixels; the ranking suggests and the caller decides.",
+      "input": {
+        "detections": "detection-skill/detections@1 (kind face, with attributes)",
+        "detections_path": "file (instead of detections)",
+        "video": "file (optional; checked against detections.source.fingerprint)",
+        "measures": "[{t, sharpness?, mean_luma?}] (optional)",
+        "weights": "{eyes_open, sharpness, exposure, frontal, size} (optional)",
+        "eyes_closed_below": "0..1 (optional, default 0.5)"
+      },
+      "output": {
+        "ranking": "[{rank, index, t, score, parts, missing, sources, eyes_closed, faces, main_face, main_face_box}]",
+        "chosen": "the first ranked frame",
+        "asset": "{kind: video_frame, path, timestamp} when video is given",
+        "method": "object"
+      },
+      "produces_output": false,
+      "writes_media": false,
+      "deterministic": true,
+      "mutates_input": false,
+      "side_effects": []
+    },
+    {
+      "tool_id": "thumbnail/place_text",
+      "role": "layout",
+      "description": "Move one text element of a ThumbnailDocument to the first candidate position (caller-given, or eight edge and corner positions) whose painted box stays on the canvas and clears every face box by a margin. Face boxes come from detection-skill and are mapped onto the canvas through the image element's crop, fit and position. Refused when no candidate is clear; the text is never placed over a face. Returns the updated document; renders nothing.",
+      "input": {
+        "document": "ThumbnailDocument",
+        "text_element": "element_id",
+        "image_element": "element_id",
+        "faces": "[[x, y, w, h]] in frame_size pixels",
+        "frame_size": "{width, height} (required for a video_frame asset)",
+        "candidates": "[{name?, position, align?}] (optional)",
+        "margin": "px (default 16)"
+      },
+      "output": {
+        "document": "ThumbnailDocument",
+        "placement": "{chosen, position, align, text_box, face_boxes, margin, tried}"
+      },
+      "produces_output": false,
+      "writes_media": false,
+      "deterministic": true,
+      "mutates_input": false,
+      "side_effects": []
+    },
+    {
+      "tool_id": "thumbnail/generate_background",
+      "role": "execution",
+      "description": "Optional (ADR-12): generate one background image from a caller-written prompt and an explicit seed with a named, locally installed AI provider (FLUX.2 [klein] 4B), as a validated PNG/JPEG with provenance (engine, model, licence). Never decides what to show and never composes: the result is an ordinary image asset for thumbnail/render. Refused (TOOL_ERROR, reason provider_unavailable) when the provider is not configured or cannot run.",
+      "input": {
+        "background": {
+          "provider": "provider id",
+          "prompt": "string",
+          "width": "int",
+          "height": "int",
+          "seed": "int",
+          "steps": "int (optional)",
+          "guidance_scale": "number (optional)"
+        },
+        "output": "OutputSpec",
+        "options": "RenderOptions"
+      },
+      "output": {
+        "output": "path",
+        "format": "png|jpeg",
+        "width": "int",
+        "height": "int",
+        "size": "int",
+        "sha256": "str",
+        "reused": "bool (always false)",
+        "provenance": "object (generated, provider, engine, model, licence, prompt, seed, steps, guidance_scale)"
+      },
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": false,
+      "mutates_input": false,
+      "ai": true,
+      "optional": true,
+      "requires": "a configured background provider (see background_providers); never downloads a model, opens no connection",
+      "side_effects": [
+        "writes the output file"
+      ]
+    }
+  ],
+  "provides": [
+    {
+      "id": "thumbnail.render",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "thumbnail/render"
+    },
+    {
+      "id": "thumbnail.extract_frame",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "thumbnail/extract_frame"
+    },
+    {
+      "id": "thumbnail.render_batch",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "thumbnail/render_batch"
+    },
+    {
+      "id": "thumbnail.render_layers",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "thumbnail/render_layers"
+    },
+    {
+      "id": "thumbnail.render_variants",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "thumbnail/render_variants"
+    },
+    {
+      "id": "thumbnail.generate_background",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "thumbnail/generate_background"
+    }
+  ],
+  "dependencies": [
+    {
+      "skill_id": "ffmpeg-skill",
+      "version_range": ">=1.0",
+      "range_of": "contract_version",
+      "required": false,
+      "for": [
+        "thumbnail/render",
+        "thumbnail/extract_frame",
+        "thumbnail/render_batch",
+        "thumbnail/render_layers",
+        "thumbnail/render_variants"
+      ],
+      "tools": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/look"
+      ]
+    },
+    {
+      "skill_id": "qc-skill",
+      "version_range": ">=1",
+      "range_of": "contract_version",
+      "required": false,
+      "for": [
+        "thumbnail/render_variants"
+      ],
+      "tools": [
+        "qc-skill/run"
+      ],
+      "uses": "video.text_regions (text legibility, its ADR-018) on a written thumbnail"
+    }
+  ],
+  "document": {
+    "schema": "thumbnail-skill/request@1",
+    "id_pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+    "forbidden_fields": [
+      "af",
+      "args",
+      "argv",
+      "cmd",
+      "command",
+      "commands",
+      "css",
+      "cwd",
+      "env",
+      "eval",
+      "exec",
+      "executable",
+      "ffmpeg",
+      "filter",
+      "filter_complex",
+      "filters",
+      "html",
+      "javascript",
+      "script",
+      "shell",
+      "vf"
+    ],
+    "canvas": {
+      "width": "16..7680",
+      "height": "16..7680",
+      "background": "#RRGGBB(AA), default #000000"
+    },
+    "assets": {
+      "kinds": [
+        "image",
+        "video_frame"
+      ],
+      "max_assets": 32,
+      "video_frame": "explicit timestamp only; this skill never searches for a 'best frame'"
+    },
+    "elements": {
+      "types": [
+        "image",
+        "text"
+      ],
+      "max_elements": 64,
+      "stacking": "z_index, ties broken by document order",
+      "image": {
+        "description": "A still image or an extracted video frame, placed and sized on the canvas.",
+        "fields": {
+          "asset_id": "ref to a declared asset",
+          "position": {
+            "x": "number",
+            "y": "number"
+          },
+          "size": {
+            "width": "int",
+            "height": "int"
+          },
+          "fit": [
+            "cover",
+            "contain",
+            "fill",
+            "none"
+          ],
+          "crop": {
+            "x": "int",
+            "y": "int",
+            "width": "int",
+            "height": "int (optional; source-pixel space)"
+          },
+          "opacity": "0..1",
+          "rotation": [
+            0,
+            90,
+            180,
+            270
+          ]
+        }
+      },
+      "text": {
+        "description": "Literal text (explicit '\\n' for line breaks; no automatic word-wrap or layout decisions).",
+        "fields": {
+          "text": "string, max 2000 chars, max 50 lines",
+          "font_id": "one of ['cjk', 'mono', 'sans', 'sans-bold', 'serif']",
+          "font_size": "6..400",
+          "color": "#RRGGBB(AA)",
+          "position": {
+            "x": "number",
+            "y": "number"
+          },
+          "align": {
+            "horizontal": [
+              "left",
+              "center",
+              "right"
+            ],
+            "vertical": [
+              "top",
+              "middle",
+              "bottom"
+            ]
+          },
+          "line_spacing": "0.5..5.0",
+          "opacity": "0..1",
+          "background": {
+            "color": "#RRGGBB(AA)",
+            "padding": "0..200 (optional)"
+          },
+          "stroke": {
+            "color": "#RRGGBB(AA)",
+            "width": "0..40 (optional)"
+          },
+          "shadow": {
+            "color": "#RRGGBB(AA)",
+            "offset_x": "-200..200",
+            "offset_y": "-200..200 (optional)"
+          }
+        }
+      }
+    }
+  },
+  "output_formats": {
+    "png": {
+      "extensions": [
+        ".png"
+      ],
+      "lossless": true
+    },
+    "jpeg": {
+      "extensions": [
+        ".jpg",
+        ".jpeg"
+      ],
+      "lossless": false
+    }
+  },
+  "platform_presets": {
+    "field": "output.preset",
+    "tools": [
+      "thumbnail/render",
+      "thumbnail/extract_frame"
+    ],
+    "precedence": "explicit document.canvas width+height win over the preset's size; with a preset both may be omitted (the preset's size is used); giving only one of the two is INVALID_REQUEST. The preset's limits are checked either way.",
+    "check": "after rendering, the written artifact's real dimensions (min/max width/height and aspect-ratio range), format and byte size are checked against the preset before it is cached or placed at the output path; a cache hit is checked the same way",
+    "failure": {
+      "code": "VALIDATION_ERROR",
+      "reason": "preset_limit_exceeded",
+      "details": [
+        "preset",
+        "violations [{check, limit?, expected, got}]"
+      ]
+    },
+    "response": "on success, `preset` {name, platform, checked, ok} in the response and `preset` (name) in provenance; absent without a preset",
+    "bytes": "max_bytes in bytes, decimal megabytes (1 MB = 1,000,000 bytes)",
+    "presets": {
+      "youtube": {
+        "platform": "YouTube",
+        "surface": "video custom thumbnail",
+        "width": 1280,
+        "height": 720,
+        "aspect_ratio": {
+          "min": "16:9",
+          "max": "16:9"
+        },
+        "min_width": 640,
+        "min_height": null,
+        "max_width": null,
+        "max_height": null,
+        "formats": [
+          "png",
+          "jpeg"
+        ],
+        "max_bytes": 2000000,
+        "unverified": [],
+        "sources": [
+          "https://support.google.com/youtube/answer/72431"
+        ]
+      },
+      "youtube-shorts": {
+        "platform": "YouTube",
+        "surface": "Shorts custom thumbnail",
+        "width": 1080,
+        "height": 1920,
+        "aspect_ratio": {
+          "min": "9:16",
+          "max": "9:16"
+        },
+        "min_width": null,
+        "min_height": 640,
+        "max_width": null,
+        "max_height": null,
+        "formats": [
+          "png",
+          "jpeg"
+        ],
+        "max_bytes": 50000000,
+        "unverified": [],
+        "sources": [
+          "https://support.google.com/youtube/answer/72431"
+        ]
+      },
+      "tiktok": {
+        "platform": "TikTok",
+        "surface": "video cover (vertical)",
+        "width": 1080,
+        "height": 1920,
+        "aspect_ratio": {
+          "min": "9:16",
+          "max": "9:16"
+        },
+        "min_width": null,
+        "min_height": null,
+        "max_width": 1080,
+        "max_height": 1920,
+        "formats": [
+          "jpeg"
+        ],
+        "max_bytes": 2000000,
+        "unverified": [
+          "width",
+          "height",
+          "aspect_ratio",
+          "max_width",
+          "max_height",
+          "formats",
+          "max_bytes"
+        ],
+        "sources": [
+          "https://developers.tiktok.com/doc/content-posting-api-media-transfer-guide",
+          "https://www.tiktok.com/creator-academy/article/video-covers-thumbnails"
+        ]
+      },
+      "instagram-reels": {
+        "platform": "Instagram",
+        "surface": "Reels cover (vertical)",
+        "width": 1080,
+        "height": 1920,
+        "aspect_ratio": {
+          "min": "9:16",
+          "max": "9:16"
+        },
+        "min_width": 720,
+        "min_height": null,
+        "max_width": null,
+        "max_height": null,
+        "formats": [
+          "png",
+          "jpeg"
+        ],
+        "max_bytes": 2000000,
+        "unverified": [
+          "width",
+          "height",
+          "formats",
+          "max_bytes"
+        ],
+        "sources": [
+          "https://help.instagram.com/1038071743007909"
+        ]
+      },
+      "instagram-feed": {
+        "platform": "Instagram",
+        "surface": "feed photo (square)",
+        "width": 1080,
+        "height": 1080,
+        "aspect_ratio": {
+          "min": "4:5",
+          "max": "1.91:1"
+        },
+        "min_width": 320,
+        "min_height": null,
+        "max_width": null,
+        "max_height": null,
+        "formats": [
+          "png",
+          "jpeg"
+        ],
+        "max_bytes": 2000000,
+        "unverified": [
+          "max_bytes"
+        ],
+        "sources": [
+          "https://help.instagram.com/1631821640426723",
+          "https://www.facebook.com/business/ads-guide/update/image/instagram-feed"
+        ]
+      },
+      "x": {
+        "platform": "X (Twitter)",
+        "surface": "post image (landscape)",
+        "width": 1600,
+        "height": 900,
+        "aspect_ratio": {
+          "min": "16:9",
+          "max": "16:9"
+        },
+        "min_width": null,
+        "min_height": null,
+        "max_width": null,
+        "max_height": null,
+        "formats": [
+          "png",
+          "jpeg"
+        ],
+        "max_bytes": 5000000,
+        "unverified": [
+          "width",
+          "height",
+          "aspect_ratio"
+        ],
+        "sources": [
+          "https://docs.x.com/x-api/media/quickstart/best-practices"
+        ]
+      }
+    }
+  },
+  "batch": {
+    "tool": "thumbnail/render_batch",
+    "placeholders": {
+      "syntax": "{{column}}",
+      "replaced_in": [
+        "document.document_id",
+        "document.assets[].path",
+        "document.elements[].text.text",
+        "output.name"
+      ],
+      "built_in": [
+        "row",
+        "preset"
+      ],
+      "unknown": "INVALID_REQUEST (reason unknown_placeholder)",
+      "values": "inserted literally, never re-scanned; relative asset paths resolve against the workspace, as in thumbnail/render"
+    },
+    "csv": {
+      "header": "first row, unique non-empty names",
+      "encodings": [
+        "utf-8",
+        "cp932"
+      ],
+      "default_encoding": "utf-8",
+      "encoding_note": "utf-8 accepts a leading byte-order mark; cp932 is the opt-in choice for a CSV saved by Japanese Excel",
+      "delimiters": [
+        ",",
+        ";",
+        "\t"
+      ],
+      "max_bytes": 4194304,
+      "blank_lines": "skipped",
+      "field_count": "must equal the header's"
+    },
+    "limits": {
+      "rows": 1000,
+      "targets": 4,
+      "cell_chars": 2000
+    },
+    "targets": "one per output.preset; the template's canvas may omit width/height (the preset's size is used); 16:9 and 9:16 are two targets (for example youtube and youtube-shorts), each with its own layout",
+    "text_fit": {
+      "rule": "the largest font size from the template's own size down to min_font_size at which the element's painted box (layout block, background, ink with stroke and shadow) fits max_width x max_height and lies inside the canvas",
+      "never": [
+        "cut",
+        "wrap",
+        "enlarge"
+      ],
+      "does_not_fit": "VALIDATION_ERROR (reason text_does_not_fit), before anything is written",
+      "outside_canvas": "VALIDATION_ERROR (reason text_outside_canvas)"
+    },
+    "output_name": {
+      "default": "{{row}}-{{preset}}",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "duplicates": "INVALID_REQUEST (reason duplicate_name)"
+    },
+    "order": "every row and target is planned and checked first (structure, placeholders, fonts, text fit, input files, output names); then each is rendered with thumbnail/render; a failure while rendering stops the batch and lists the files already written (details.written)",
+    "decision": "docs/decisions.md ADR-14"
+  },
+  "frame_choice": {
+    "tools": [
+      "thumbnail/choose_frame",
+      "thumbnail/place_text"
+    ],
+    "inputs": {
+      "faces": "detection-skill/detections@1 from detection-skill (detection faces --attributes): boxes, eyes_open, frontal, size, sharpness",
+      "frame_measures": "caller-supplied [{t, sharpness, mean_luma}]; media-analysis-skill does not publish frame sharpness or exposure yet"
+    },
+    "score": {
+      "weights": {
+        "eyes_open": 0.3,
+        "sharpness": 0.25,
+        "exposure": 0.15,
+        "frontal": 0.15,
+        "size": 0.15
+      },
+      "sharpness": "s / (s + 100)",
+      "exposure": "1 - 2 * |mean_luma - 0.5|",
+      "size": "min(1, size / 0.4)",
+      "missing_part": "counts 0, listed in missing",
+      "eyes_closed_below": 0.5,
+      "order": "eyes open first, then score, then input order",
+      "main_face": "largest box"
+    },
+    "placement": {
+      "default_candidates": [
+        "bottom-center",
+        "top-center",
+        "bottom-left",
+        "bottom-right",
+        "top-left",
+        "top-right",
+        "middle-left",
+        "middle-right"
+      ],
+      "default_margin_px": 16,
+      "text_box": "layout block, background and ink with stroke and shadow (renderer.text_box)",
+      "face_mapping": "through the image element's crop, fit (cover, contain, fill, none) and position; rotation 0 only",
+      "none_clear": "VALIDATION_ERROR (reason no_position_clear_of_faces), every tried position listed"
+    },
+    "heuristic": true,
+    "detects": false,
+    "reads_pixels": false,
+    "decision": "docs/decisions.md ADR-15"
+  },
+  "variants": {
+    "tool": "thumbnail/render_variants",
+    "cli": "thumbnail render request.json --variants N --json",
+    "max_variants": 12,
+    "axes": {
+      "layout": "the text element's position and alignment (and font_size when an entry gives one); default: eight edge and corner positions",
+      "palette": "the text element's colour, background band and stroke; default: white-on-dark-band, black-on-yellow-band, white-with-outline",
+      "frame": "the asset one image element shows (variants.frames + variants.frame_element); default: none"
+    },
+    "rule": "variant k takes entry (k-1) mod n of each axis; entry 0 of each axis is the document as given ('as-given'), so variant 1 is the original",
+    "files": "<output stem>-v<k><ext> beside output.path; output.preset is checked on every variant",
+    "small_size_check": {
+      "phone_width": 320,
+      "text_height": "per text element: the tallest run of pixel rows containing its own glyph ink (fill only, alpha >= 128), drawn alone with the renderer's layout, times phone_width / canvas width",
+      "min_text_height_px": 12,
+      "min_text_height_note": "this skill's default floor at phone_width, a heuristic, not a platform figure",
+      "contrast": "qc-skill video.text_regions on the written variant at the element's painted box (WCAG 2.x contrast ratio, qc-skill ADR-018)",
+      "min_contrast_ratio": 4.5,
+      "without_qc_skill": "contrast_unmeasured (status unknown) and a warning; the height check still runs",
+      "below_a_minimum": "reported: small_size.status fail, findings text_too_small / low_contrast, the variant listed in flagged; never dropped"
+    },
+    "not_provided": [
+      "picking a winner",
+      "click-through prediction",
+      "running the A/B test"
+    ],
+    "decision": "docs/decisions.md ADR-16"
+  },
+  "layered_output": {
+    "tool": "thumbnail/render_layers",
+    "cli": "thumbnail render request.json --layers DIR --json",
+    "manifest": {
+      "file": "layers.json",
+      "schema": "thumbnail-skill/layers@1",
+      "layer_fields": [
+        "order",
+        "role (background|image|text_background|text)",
+        "element_id",
+        "type",
+        "z_index",
+        "file",
+        "position {x, y}",
+        "size {width, height}",
+        "mode RGBA",
+        "sha256"
+      ]
+    },
+    "layers": "layer 0 is the canvas background (full canvas); then, in stacking order, each image element as pasted (after crop, fit, rotation, opacity) and each text element's background band and text (after opacity), each cropped to its visible pixels; a composite with no visible pixel is listed with file null",
+    "compose": "start from layer 0 (the background, the full canvas) as the base image; then alpha-composite every further layer at its position, in order (Porter-Duff source-over on straight 8-bit RGBA, as Pillow's Image.alpha_composite)",
+    "verified": "the image rebuilt from the layer files read back from disk equals the written PNG byte for byte (for a JPEG thumbnail: the lossless composite it was encoded from); otherwise VALIDATION_ERROR (reason layers_mismatch)",
+    "decision": "docs/decisions.md ADR-17"
+  },
+  "kit": {
+    "schema": "velisa/kit@1",
+    "field": "options.kit",
+    "cli": "thumbnail render request.json --kit kit.json --json",
+    "tools": [
+      "thumbnail/render",
+      "thumbnail/render_layers",
+      "thumbnail/render_variants",
+      "thumbnail/render_batch"
+    ],
+    "spec": "Velisa docs/specs/kit.md: a superset of ffmpeg-skill brand.json; every brand.json is a kit",
+    "file": {
+      "format": "UTF-8 JSON object",
+      "max_bytes": 262144,
+      "paths": "logo (and font_file) relative to the kit file",
+      "policy": "the kit file and its logo are inputs under the request's path policy (allowed_input_roots)",
+      "colours": "RRGGBB without '#' (this skill adds the '#'); `colours` is read as `colors`; null is not stated"
+    },
+    "mapping": [
+      {
+        "kit": "colors.text",
+        "to": "document.elements[].text.color",
+        "when": "the element gives no color"
+      },
+      {
+        "kit": "colors.background",
+        "to": "document.canvas.background",
+        "when": "the canvas gives no background"
+      },
+      {
+        "kit": "colors.background",
+        "to": "document.elements[].text.background.color",
+        "when": "the element gives a background band without a color"
+      },
+      {
+        "kit": "colors.outline",
+        "to": "document.elements[].text.stroke.color",
+        "when": "the element gives a stroke without a color"
+      },
+      {
+        "kit": "font",
+        "to": "document.elements[].text.font_id",
+        "when": "the element gives no font_id; the registered font_id whose resolved file on this machine has that family name (regular style first)"
+      },
+      {
+        "kit": "logo, logo_position, logo_scale, safe_margin, logo_opacity?",
+        "to": "an image asset and element 'kit-logo' (top of the stack, fit contain)",
+        "when": "the kit states logo, logo_position, logo_scale and safe_margin, and the document has no element or asset 'kit-logo'"
+      },
+      {
+        "kit": "colors.primary, colors.text, colors.background, colors.outline",
+        "to": "render_variants' palettes",
+        "when": "variants.palettes is not given"
+      }
+    ],
+    "precedence": "a value stated in the document wins over the kit and is listed in kit.kept; the kit fills only slots the document leaves out",
+    "not_filled": "nothing the kit leaves out is filled in: ffmpeg-skill's brand.json defaults are not used; a slot neither gives stays as it is (a text element without color or font_id is still INVALID_REQUEST)",
+    "logo": {
+      "element_id": "kit-logo",
+      "positions": [
+        "top-left",
+        "top",
+        "top-right",
+        "left",
+        "center",
+        "right",
+        "bottom-left",
+        "bottom",
+        "bottom-right"
+      ],
+      "size": "logo_scale px wide, the image's aspect ratio",
+      "margin": "safe_margin from the edges",
+      "opacity": "logo_opacity when stated, else this skill's default 1.0"
+    },
+    "variants": {
+      "palettes": "when variants.palettes is not given: kit-text-on-background-band, kit-background-on-primary-band, kit-text-with-outline, kit-primary-with-outline, each only when the kit states its two colours; with one colour, kit-<role> (that colour alone); with none, INVALID_REQUEST (kit_without_colors): this skill's default palettes are not used with a kit",
+      "padding": 16,
+      "stroke_width": 4,
+      "layout_numbers": "this skill's variant defaults, not the kit's"
+    },
+    "unmapped": {
+      "font_file": "fonts are named only by registered font_id; this skill never reads a font file path from a request",
+      "colors.accent": "a ThumbnailDocument has no element role for an accent colour",
+      "colors.secondary": "a ThumbnailDocument has no element role for a secondary colour",
+      "lang": "this skill does not choose fonts or layout by language",
+      "styles": "styles.caption is the caption look; a thumbnail has no caption",
+      "caption": "caption burn-in defaults; a thumbnail has no caption",
+      "loudness": "a thumbnail has no audio",
+      "fonts": "font licences and embedding are recorded in the kit, not checked or used by this skill",
+      "logo_variants": "only the one logo file (logo) is placed",
+      "contrast": "this skill computes no contrast itself (render_variants measures it through qc-skill)",
+      "name": "recorded in response.kit.name; a ThumbnailDocument has no name field"
+    },
+    "invalid": {
+      "code": "INVALID_INPUT",
+      "reason": "bad_kit",
+      "when": "a value that maps is malformed or out of range, an unknown schema, both colors and colours"
+    },
+    "result": {
+      "response.kit": "{schema, read, file {path, sha256, size}, name, colors, applied [{target, value, from}], kept [{target, value, kit_key, kit_value}], unmapped [{key, reason}], unused [{key, reason}], font? {kit, font_id, family, style, path, font_file_hash}, logo?, palettes?}",
+      "provenance.kit": "{schema, path, sha256}",
+      "warnings": "one per unmapped key",
+      "validate": "validation.kit {read: false, slots}: validate touches no file, so the kit is not read"
+    },
+    "decision": "docs/decisions.md ADR-18"
+  },
+  "background_providers": {
+    "tool": "thumbnail/generate_background",
+    "ai": true,
+    "optional": true,
+    "deterministic": false,
+    "core_tools_use_ai": false,
+    "core_tools": [
+      "thumbnail/validate",
+      "thumbnail/render",
+      "thumbnail/extract_frame"
+    ],
+    "without_a_provider": "render, extract_frame and validate are unchanged; doctor reports the provider not_configured without changing its status; generate_background is refused (TOOL_ERROR, reason provider_unavailable, not retryable)",
+    "configured_but_unavailable": "doctor status degraded (a warning names what is missing); generate_background refused the same way",
+    "network": false,
+    "downloads_models": false,
+    "request_limits": {
+      "prompt_chars": 2000,
+      "width": "256..2048, a multiple of 16",
+      "height": "256..2048, a multiple of 16",
+      "seed": "0..4294967295",
+      "steps": "1..50",
+      "guidance_scale": "0..20"
+    },
+    "providers": {
+      "flux2-klein-4b": {
+        "provider": "flux2-klein-4b",
+        "engine": "FLUX.2 [klein] 4B",
+        "model": "black-forest-labs/FLUX.2-klein-4B",
+        "licence": "Apache-2.0",
+        "licence_url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "model_card": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
+        "configure_env": "THUMBNAIL_FLUX2_KLEIN_4B_DIR",
+        "requires": [
+          "torch",
+          "diffusers>=0.37.0 (Flux2KleinPipeline)",
+          "transformers>=4.51.0 (its Qwen3 text encoder)"
+        ],
+        "defaults": {
+          "steps": 4,
+          "guidance_scale": 1.0
+        }
+      }
+    },
+    "provenance": [
+      "generated",
+      "provider",
+      "engine",
+      "engine_version",
+      "model",
+      "licence",
+      "licence_url",
+      "model_card",
+      "prompt",
+      "prompt_sha256",
+      "seed",
+      "steps",
+      "guidance_scale",
+      "width",
+      "height",
+      "output_hash"
+    ],
+    "decision": "docs/decisions.md ADR-12"
+  },
+  "fonts": {
+    "font_ids": [
+      "cjk",
+      "mono",
+      "sans",
+      "sans-bold",
+      "serif"
+    ],
+    "resolution": "font_id -> the first existing file among this skill's registered per-platform candidate paths (fonts.py); never an arbitrary caller-supplied path; a font_id with no resolvable file fails MISSING_INPUT, never a silent substitution",
+    "registry": {
+      "sans": {
+        "display_name": "Sans",
+        "role": "default UI sans-serif"
+      },
+      "sans-bold": {
+        "display_name": "Sans Bold",
+        "role": "emphasis / headline sans-serif"
+      },
+      "serif": {
+        "display_name": "Serif",
+        "role": "serif text"
+      },
+      "mono": {
+        "display_name": "Monospace",
+        "role": "monospaced text"
+      },
+      "cjk": {
+        "display_name": "CJK Sans",
+        "role": "Japanese / Chinese / Korean text"
+      }
+    }
+  },
+  "rendering": {
+    "engine": "Pillow",
+    "video_frame_decoding": "delegated to ffmpeg-skill (probe, look --at --no-timecode); this skill never runs ffmpeg itself",
+    "compositing": "Pillow raster operations only (paste/crop/resize/draw); no filter string, no shell, no arbitrary code path"
+  },
+  "execution": {
+    "mode": "local",
+    "canonical_invocation": [
+      "thumbnail",
+      "run",
+      "-",
+      "--json"
+    ],
+    "stdin": "{\"tool\": <tool_id>, \"params\": {...}}",
+    "stdout": "exactly one thumbnail-skill/response@1 document (through run -) or {'ok', 'tool', 'result'}",
+    "shell": false,
+    "arbitrary_executables": false,
+    "arbitrary_filters": false,
+    "network": false,
+    "input_mutation": false,
+    "ai": false,
+    "forbidden_request_fields": [
+      "af",
+      "args",
+      "argv",
+      "cmd",
+      "command",
+      "commands",
+      "css",
+      "cwd",
+      "env",
+      "eval",
+      "exec",
+      "executable",
+      "ffmpeg",
+      "filter",
+      "filter_complex",
+      "filters",
+      "html",
+      "javascript",
+      "script",
+      "shell",
+      "vf"
+    ]
+  },
+  "ffmpeg_skill": {
+    "contract_version": "1.0",
+    "tools_used": [
+      "probe",
+      "look"
+    ],
+    "compatibility": "any version whose probe/look expose flags_required (detected from its contract or --help; no version window)",
+    "flags_required": {
+      "probe": [],
+      "look": [
+        "output",
+        "at",
+        "no_timecode",
+        "json"
+      ]
+    },
+    "flags_optional": {
+      "look": [
+        "overwrite"
+      ]
+    }
+  },
+  "schema_versions": {
+    "contract": "1",
+    "request": "1",
+    "response": "1",
+    "doctor": "1"
+  },
+  "errors": {
+    "codes": [
+      "INVALID_REQUEST",
+      "INVALID_INPUT",
+      "PATH_NOT_ALLOWED",
+      "UNSUPPORTED_OPERATION",
+      "UNSUPPORTED_FORMAT",
+      "MISSING_INPUT",
+      "INVALID_TIME_RANGE",
+      "DEPENDENCY_ERROR",
+      "TOOL_ERROR",
+      "OUTPUT_ERROR",
+      "VALIDATION_ERROR",
+      "CANCELLED",
+      "INTERNAL_ERROR"
+    ],
+    "exit_codes": {
+      "INVALID_REQUEST": 2,
+      "INVALID_INPUT": 3,
+      "PATH_NOT_ALLOWED": 4,
+      "UNSUPPORTED_OPERATION": 5,
+      "UNSUPPORTED_FORMAT": 6,
+      "MISSING_INPUT": 7,
+      "INVALID_TIME_RANGE": 8,
+      "DEPENDENCY_ERROR": 11,
+      "TOOL_ERROR": 12,
+      "OUTPUT_ERROR": 13,
+      "VALIDATION_ERROR": 14,
+      "CANCELLED": 15,
+      "INTERNAL_ERROR": 16
+    },
+    "retryable": {
+      "INVALID_REQUEST": false,
+      "INVALID_INPUT": false,
+      "PATH_NOT_ALLOWED": false,
+      "UNSUPPORTED_OPERATION": false,
+      "UNSUPPORTED_FORMAT": false,
+      "MISSING_INPUT": false,
+      "INVALID_TIME_RANGE": false,
+      "DEPENDENCY_ERROR": false,
+      "TOOL_ERROR": true,
+      "OUTPUT_ERROR": false,
+      "VALIDATION_ERROR": false,
+      "CANCELLED": true,
+      "INTERNAL_ERROR": false
+    },
+    "success_exit_code": 0
+  },
+  "provenance": {
+    "per_output": [
+      "skill",
+      "skill_version",
+      "operation",
+      "engine",
+      "engine_version",
+      "identity",
+      "reused",
+      "assets (sha256, timestamp for video_frame)",
+      "fonts (font_id, path, sha256)",
+      "output_hash"
+    ],
+    "identity": "sha256 over canonical JSON of {document, resolved asset content identity, resolved font content identity, skill/engine version}; a video_frame's identity is its source video's sha256 + timestamp, not the decoded frame's bytes"
+  },
+  "deterministic": true
+}

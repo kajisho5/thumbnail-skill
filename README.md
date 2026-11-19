@@ -432,6 +432,11 @@ registry (see `kajisho5/AI-video-production-OS`) can resolve to this Skill witho
 hardcoding it. `validate` has no Capability id — it produces no output artifact, only a
 structural check. Additive; no behavior change to any tool.
 
+`contract/contract.json` is the same contract committed as a file (byte for byte the `thumbnail contract --json` output),
+so any release's contract is `git show vX.Y.Z:contract/contract.json`, with nothing installed or run. Regenerate it
+with `python contract/generate.py` after a contract change: a test fails when it is stale, and the release workflow
+regenerates it after the version bump.
+
 ## Where this skill ends and others begin
 
 | Repository | Question it answers | Example |
