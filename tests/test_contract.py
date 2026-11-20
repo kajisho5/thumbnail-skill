@@ -69,3 +69,18 @@ def test_doctor_never_reports_unimplemented_font_as_available():
         assert status["status"] in ("available", "unavailable")
         if status["status"] == "available":
             assert "path" in status and "sha256" in status
+
+
+def test_provides_lifecycle_is_the_1_0_promise():
+    """ADR-20: from 1.0, render and extract_frame are STABLE (breaking only in a major release); the newer tools and the
+    optional AI background stay EXPERIMENTAL; every lifecycle is one of the OS registry's values."""
+    lifecycles = {p["tool_id"]: p["lifecycle"] for p in skill_contract()["provides"]}
+    assert lifecycles == {
+        "thumbnail/render": "STABLE",
+        "thumbnail/extract_frame": "STABLE",
+        "thumbnail/render_batch": "EXPERIMENTAL",
+        "thumbnail/render_variants": "EXPERIMENTAL",
+        "thumbnail/render_layers": "EXPERIMENTAL",
+        "thumbnail/generate_background": "EXPERIMENTAL",
+    }
+    assert set(lifecycles.values()) <= {"PROPOSED", "EXPERIMENTAL", "STABLE", "DEPRECATED", "RETIRED"}
