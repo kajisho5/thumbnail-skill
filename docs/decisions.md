@@ -488,8 +488,8 @@
   - `.github/scripts/release_gate.py` lets a push release only when a pull request merged since the latest tag carries a release-level label or no label at all. Here they are the labels of `.github/release-drafter.yml`'s categories that carry a `semver-increment`, less documentation and chore. A pull request labelled only chore, ci, documentation, docs, test or similar releases nothing. This is imagemagick-skill's rule. release-drafter's `default` accepts only major, minor or patch, so the gate runs first, and the maintenance labels no longer map to a patch.
   - A version bumped by hand in a pull request is released whatever its labels. The contract is unchanged.
 
-- **ADR-20 1.0.0: render and extract_frame are STABLE; breaking contract changes to them ship only in a major release (Velisa ADR-030, D45).**
-  - Velisa ADR-030 ranked the 0.x Skills by stability. This skill came first, on its record:
+- **ADR-20 1.0.0: render and extract_frame are STABLE; breaking contract changes to them ship only in a major release (Velisa ADR-031, D46).**
+  - Velisa ADR-031 ranked the 0.x Skills by stability. This skill came first, on its record:
     - 23 releases;
     - `si contract-diff` between its last measured tags gave `none`, and its last merged pull requests were all `contract:none`;
     - no open roadmap step and no open issue.

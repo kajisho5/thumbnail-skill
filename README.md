@@ -483,7 +483,7 @@ be pushed -- both would just be overwritten or ignored by the next automated run
 
 ## Compatibility promise (1.0)
 
-From 1.0.0 the release version follows the contract (ADR-20, Velisa ADR-030). Whether a contract change is
+From 1.0.0 the release version follows the contract (ADR-20, Velisa ADR-031). Whether a contract change is
 breaking, additive or neither is what `si contract-diff` reports on every pull request:
 
 - **Covered (`STABLE`):** `thumbnail/render` (`thumbnail.render`) and `thumbnail/extract_frame`
@@ -491,7 +491,8 @@ breaking, additive or neither is what `si contract-diff` reports on every pull r
   request / response / error shapes and the error codes. A breaking change to any of these ships only in a
   major release (2.0.0). An addition ships in a minor release, and a release with no contract change is a patch.
 - **Experimental (`EXPERIMENTAL`):** `render_batch`, `render_variants`, `render_layers`, the optional AI
-  `generate_background`, and the helpers `choose_frame` and `place_text`. They may still change in a minor
+  `generate_background`, and the helpers `choose_frame` and `place_text`. The two helpers have no `provides[]` entry, so this
+  README is where their status is stated. All of these may still change in a minor
   release. Such a change is named in its CHANGELOG entry. A tool is promoted to `STABLE` in any release, with no
   shape change (the `provides[].lifecycle` field in `contract/contract.json` says which is which).
 - **Deprecation:** a `STABLE` tool or parameter is first marked `DEPRECATED` in a minor release, with its

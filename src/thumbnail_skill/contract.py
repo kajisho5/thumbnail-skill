@@ -132,7 +132,7 @@ CAPABILITY_IDS: Dict[str, str] = {
 }
 
 
-# The 1.0 compatibility promise (ADR-20, Velisa ADR-030): a STABLE capability (and its tool) changes in a breaking way
+# The 1.0 compatibility promise (ADR-20, Velisa ADR-031): a STABLE capability (and its tool) changes in a breaking way
 # only in a major release. render and extract_frame are the core this skill has shipped and the agent has called since
 # 0.1; the newer tools (batch, variants, layers, added 2026-11-06) and the optional, non-deterministic AI background stay
 # EXPERIMENTAL and may still change in a minor release.
