@@ -330,12 +330,12 @@
   "provides": [
     {
       "id": "thumbnail.render",
-      "lifecycle": "EXPERIMENTAL",
+      "lifecycle": "STABLE",
       "tool_id": "thumbnail/render"
     },
     {
       "id": "thumbnail.extract_frame",
-      "lifecycle": "EXPERIMENTAL",
+      "lifecycle": "STABLE",
       "tool_id": "thumbnail/extract_frame"
     },
     {

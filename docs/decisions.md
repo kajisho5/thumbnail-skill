@@ -487,3 +487,16 @@
   - The release job now commits and tags locally, runs `tests/test_contract_file.py`, `tests/test_release_labels.py`, `tests/test_version_source.py` and `tests/test_release_gate.py` on that commit, and only then pushes. A failure pushes nothing.
   - `.github/scripts/release_gate.py` lets a push release only when a pull request merged since the latest tag carries a release-level label or no label at all. Here they are the labels of `.github/release-drafter.yml`'s categories that carry a `semver-increment`, less documentation and chore. A pull request labelled only chore, ci, documentation, docs, test or similar releases nothing. This is imagemagick-skill's rule. release-drafter's `default` accepts only major, minor or patch, so the gate runs first, and the maintenance labels no longer map to a patch.
   - A version bumped by hand in a pull request is released whatever its labels. The contract is unchanged.
+
+- **ADR-20 1.0.0: render and extract_frame are STABLE; breaking contract changes to them ship only in a major release (Velisa ADR-031, D46).**
+  - Velisa ADR-031 ranked the 0.x Skills by stability. This skill came first, on its record:
+    - 23 releases;
+    - `si contract-diff` between its last measured tags gave `none`, and its last merged pull requests were all `contract:none`;
+    - no open roadmap step and no open issue.
+  - `provides[].lifecycle` is `STABLE` for `thumbnail.render` and `thumbnail.extract_frame`, which have been the core since 0.1 and are what video-production-agent calls. The other four stay `EXPERIMENTAL`:
+    - `render_batch`, `render_variants` and `render_layers`, added on 2026-11-06;
+    - `generate_background`, which is optional, AI and not deterministic.
+  - The README's "Compatibility promise (1.0)" section is the promise: what it covers (including `validate`, the document schema and the error codes), what stays experimental, and the deprecation rule.
+  - The contract change is a lifecycle promotion only, `none` by `si contract-diff` (rule `lifecycle-promoted`). The version goes 0.1.22 -> 1.0.0 through the existing flow: the pull request carries the `major` label, which release-drafter resolves to 1.0.0 and `release_gate.py` counts as release-level. No workflow change was needed. `contract_version` stays `1`.
+  - Tests: `tests/test_contract.py::test_provides_lifecycle_is_the_1_0_promise`.
+
