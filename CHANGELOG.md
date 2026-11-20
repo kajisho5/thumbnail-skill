@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.0.0 (2026-11-20)
+
+## What's Changed
+
+## 💥 Breaking Changes
+
+* feat!: 1.0.0 — render and extract_frame are STABLE; breaking changes to them only in a major release (ADR-20) (#39) @kajisho5, @claude
+
+## 🚀 Features
+
+* feat!: 1.0.0 — render and extract_frame are STABLE; breaking changes to them only in a major release (ADR-20) (#39) @kajisho5, @claude
+
+## 📝 Documentation
+
+* feat!: 1.0.0 — render and extract_frame are STABLE; breaking changes to them only in a major release (ADR-20) (#39) @kajisho5, @claude
+
+## 🧰 Maintenance
+
+* ci: Velisa's reusable changelog-check/release-guard; dependencies PRs release a patch (D36, D37) (#36) @kajisho5, @claude
+
+**Full Changelog**: https://github.com/kajisho5/thumbnail-skill/compare/v0.1.22...v1.0.0
+
+
 ## v0.1.22 (2026-11-19)
 
 ## What's Changed
